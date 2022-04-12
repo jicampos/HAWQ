@@ -128,3 +128,9 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+# vscode debug
+.vscode/launch.json
+
+# other files 
+*.onnx

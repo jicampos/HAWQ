@@ -37,11 +37,11 @@ class Q_JetTagger(nn.Module):
     ----------
     model : nn.Module
         The pretrained floating-point JetTagger.
-    weight_precision: int, default 8
+    weight_precision : int, default 8
         Bitwidth for quantized weights.
-    bias_precision: int, default 32
+    bias_precision : int, default 32
         Bitwidth for quantized bias.
-    act_precision: int, default 16
+    act_precision : int, default 16
         Bitwidth for quantized activations.
     """
     def __init__(self, 
@@ -65,17 +65,17 @@ class Q_JetTagger(nn.Module):
 
         fc1_data = getattr(model, 'fc1')
         self.features.add_module("fc1", QuantLinear(weight_precision,bias_bit=bias_precision))
-        self.features.add_module("act1", nn.ReLU6())
+        self.features.add_module("act1", nn.ReLU())
         self.features.fc1.set_param(fc1_data)
 
         fc2_data = getattr(model, 'fc2')
         self.features.add_module("fc2", QuantLinear(weight_precision,bias_bit=bias_precision))
-        self.features.add_module("act2", nn.ReLU6())
+        self.features.add_module("act2", nn.ReLU())
         self.features.fc2.set_param(fc2_data)
 
         fc3_data = getattr(model, 'fc3')
         self.features.add_module("fc3", QuantLinear(weight_precision,bias_bit=bias_precision))
-        self.features.add_module("act3", nn.ReLU6())
+        self.features.add_module("act3", nn.ReLU())
         self.features.fc3.set_param(fc3_data)
 
         fc4_data = getattr(model, 'fc4')
@@ -102,7 +102,6 @@ class Q_JetTagger(nn.Module):
         x, weight_scaling_factor = self.features.fc4(x, act_scaling_factor)
         x = self.features.softmax(x)
         x, act_scaling_factor = self.quant_act4(x, act_scaling_factor, weight_scaling_factor)
-        x = x.view(x.size(0), -1)
         return x
 
 

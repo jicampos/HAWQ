@@ -3,3 +3,4 @@ from .models.q_mobilenetv2 import *
 from .models.q_inceptionv3 import *
 from .models.q_resnet import *
 from .models.q_jettagger import *
+from .models.q_mnist import *

@@ -75,7 +75,7 @@ class TruncFunc(torch.autograd.Function):
                     rounding_mode_s=rounding_mode)
 
 # ------------------------------------------------------------
-class ExportQuantAct(torch.nn.Module):
+class ExportONNXQuantAct(torch.nn.Module):
     def __init__(self, layer) -> None:
         super().__init__()
         self.export_mode = True
@@ -102,7 +102,7 @@ class ExportQuantAct(torch.nn.Module):
 
 
 # ------------------------------------------------------------
-class ExportQuantLinear(torch.nn.Module):
+class ExportONNXQuantLinear(torch.nn.Module):
     def __init__(self, layer) -> None:
         super().__init__()
         in_features, out_features = layer.weight.shape[1], layer.weight.shape[0]
@@ -128,13 +128,39 @@ class ExportQuantLinear(torch.nn.Module):
 
 
 # ------------------------------------------------------------
-class ExportQuantConv2d(torch.nn.Module):
+class ExportONNXQuantConv2d(torch.nn.Module):
     def __init__(self, layer) -> None:
         super().__init__()
         self.conv = layer.conv
 
     def forward(self, x, act_scaling_factor=None):
         return self.conv(x), act_scaling_factor
+
+
+# ------------------------------------------------------------
+class ExportONNXQuantBnConv2d(torch.nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+
+        
+    def forward(self, x, pre_act_scaling_factor=None):
+        ...
+
+
+# doesn't need custom layer for QuantMaxPool2d
+class ExportONNXQuantMaxPool2d(torch.nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+    
+    def forward(self, x):
+        ...
+    
+class ExportQuantAveragePool2d(torch.nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+    
+    def forward(self, x, x_scaling_factor=None):
+        ...
 
 # ------------------------------------------------------------
 def replace_layers(model):
@@ -144,11 +170,11 @@ def replace_layers(model):
     for name in dir(model):
         layer = getattr(model, name)
         if isinstance(layer, QuantAct):
-            setattr(model, name, ExportQuantAct(layer))
+            setattr(model, name, ExportONNXQuantAct(layer))
         elif isinstance(layer, QuantLinear):
-            setattr(model, name, ExportQuantLinear(layer))
+            setattr(model, name, ExportONNXQuantLinear(layer))
         elif isinstance(layer, QuantConv2d):
-            setattr(model, name, ExportQuantConv2d(layer))
+            setattr(model, name, ExportONNXQuantConv2d(layer))
         elif isinstance(layer, torch.nn.Sequential):
             replace_layers(layer)
         elif isinstance(layer, UNSUPPORTED_LAYERS):

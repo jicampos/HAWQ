@@ -36,6 +36,20 @@ class MNIST(nn.Module):
 
 
 class Q_MNIST(torch.nn.Module):
+    """
+    Quantized Neural Network model for MNIST dataset.
+
+    Parameters:
+    ----------
+    model : nn.Module
+        The pretrained floating-point network.
+    weight_precision : int, default 8
+        Bitwidth for quantized weights.
+    bias_precision : int, default 32
+        Bitwidth for quantized bias.
+    act_precision : int, default 16
+        Bitwidth for quantized activations.
+    """
     def __init__(self, model,
                        weight_precision=8,
                        bias_precision=32,
@@ -74,11 +88,11 @@ class Q_MNIST(torch.nn.Module):
         # quantize input
         x, act_scaling_factor = self.quant_input(x)
         # quantized conv 
-        x, act_scaling_factor = self.conv1(x, act_scaling_factor)
-        x, act_scaling_factor = self.quant_act1(self.relu(x), act_scaling_factor)
+        x, weight_scaling_factor = self.conv1(x, act_scaling_factor)
+        x, act_scaling_factor = self.quant_act1(self.relu(x), act_scaling_factor, weight_scaling_factor)
         # quantized conv 
-        x, act_scaling_factor = self.conv2(x, act_scaling_factor)
-        x, act_scaling_factor = self.quant_act1(self.relu(x), act_scaling_factor)
+        x, weight_scaling_factor = self.conv2(x, act_scaling_factor)
+        x, act_scaling_factor = self.quant_act1(self.relu(x), act_scaling_factor, weight_scaling_factor)
         x = F.max_pool2d(x, 2)
 
         x = torch.flatten(x, 1)

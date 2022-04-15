@@ -5,7 +5,7 @@ import torch.nn.functional as F
 import torch.optim as optim
 from torchvision import datasets, transforms
 from torch.optim.lr_scheduler import StepLR
-from ..quantization_utils.quant_modules import QuantAct, QuantConv2d, QuantMaxPool2d, QuantLinear
+from ..quantization_utils.quant_modules import QuantAct, QuantAveragePool2d, QuantConv2d, QuantMaxPool2d, QuantLinear
 
 
 class MNIST(nn.Module):
@@ -84,7 +84,7 @@ class Q_MNIST(torch.nn.Module):
         quant_layer.set_param(layer)
         setattr(self, 'fc2', quant_layer)
 
-        self.pool = QuantMaxPool2d(kernel_size=2, stride=0)
+        self.pool = QuantAveragePool2d(kernel_size=2, stride=None)
     
     def forward(self, x):
         # quantize input

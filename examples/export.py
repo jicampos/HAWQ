@@ -18,17 +18,18 @@ from torch._C import ListType, OptionalType
 
 from utils import q_jettagger_model, q_resnet18, q_mnist
 from utils.export.utils import set_export_mode
-from utils.quantization_utils.quant_modules import QuantAct, QuantLinear, QuantBnConv2d
+from utils.quantization_utils.quant_modules import QuantAct, QuantDropout, QuantLinear, QuantBnConv2d
 from utils.quantization_utils.quant_modules import QuantMaxPool2d, QuantAveragePool2d, QuantConv2d
 
 
 SUPPORTED_LAYERS = (QuantAct, 
                     QuantLinear,
-                    QuantConv2d)
+                    QuantConv2d, 
+                    QuantMaxPool2d, 
+                    QuantAveragePool2d, 
+                    QuantDropout)
 
-UNSUPPORTED_LAYERS = (QuantBnConv2d, 
-                      QuantMaxPool2d, 
-                      QuantAveragePool2d)
+UNSUPPORTED_LAYERS = (QuantBnConv2d)
 
 # https://github.com/Xilinx/finn-base/tree/dev/src/finn/custom_op/general
 SUPPORTED_QONNX = ['Quant', 'BipolarQuant']
@@ -86,6 +87,7 @@ class ExportONNXQuantAct(torch.nn.Module):
             self.bit_width = torch.tensor(32)
         else:
             self.bit_width = torch.tensor(layer.activation_bit)
+        self.is_binary = layer.activation_bit == 1
         
         self.narrow_range = 0
         self.rounding_mode = 'ROUND'
@@ -95,7 +97,7 @@ class ExportONNXQuantAct(torch.nn.Module):
             self.signed = 0    
     
     def forward(self, x, act_scaling_factor=None, weight_scaling_factor=None):
-        if self.bit_width == 1:
+        if self.is_binary:
             return BinaryQuantFunc.apply(x, self.scale), act_scaling_factor 
         return QuantFunc.apply(x, self.scale, self.zero_point, self.bit_width,
                     self.signed, self.narrow_range, self.rounding_mode), act_scaling_factor
@@ -108,7 +110,7 @@ class ExportONNXQuantLinear(torch.nn.Module):
         in_features, out_features = layer.weight.shape[1], layer.weight.shape[0]
         
         has_bias = hasattr(layer, 'bias')
-        self.fc = torch.nn.Linear(in_features, out_features, has_bias)
+        self.fc = torch.nn.Linear(in_features, out_features, has_bias) 
         
         if has_bias:
             if layer.fix_flag:
@@ -124,7 +126,9 @@ class ExportONNXQuantLinear(torch.nn.Module):
                 self.fc.weight.data = layer.weight_integer
 
     def forward(self, x, act_scaling_factor=None, weight_scaling_factor=None):
-        return self.fc(x), act_scaling_factor
+        x = torch.matmul(QuantFunc.apply(self.fc.weight.data, torch.tensor(1), torch.tensor(0), torch.tensor(9), 0, 1, "ROUND"), x)
+        x = torch.add(x, QuantFunc.apply(self.fc.bias.data, torch.tensor(1), torch.tensor(0), torch.tensor(9), 0, 1, "ROUND"))
+        return x, act_scaling_factor
 
 
 # ------------------------------------------------------------

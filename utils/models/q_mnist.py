@@ -60,6 +60,8 @@ class Q_MNIST(torch.nn.Module):
         
         self.quant_input = QuantAct(act_precision)
         self.quant_act1 = QuantAct(act_precision)
+        self.quant_act2 = QuantAct(act_precision)
+        self.quant_act3 = QuantAct(act_precision)
 
         layer = getattr(model, 'conv1')
         quant_layer = QuantConv2d()
@@ -84,7 +86,7 @@ class Q_MNIST(torch.nn.Module):
         quant_layer.set_param(layer)
         setattr(self, 'fc2', quant_layer)
 
-        self.pool = QuantAveragePool2d(kernel_size=2, stride=None)
+        self.pool = QuantAveragePool2d(kernel_size=2, stride=2, padding=0)
     
     def forward(self, x):
         # quantize input
@@ -94,15 +96,15 @@ class Q_MNIST(torch.nn.Module):
         x, act_scaling_factor = self.quant_act1(self.relu(x), act_scaling_factor, weight_scaling_factor)
         # quantized conv 
         x, weight_scaling_factor = self.conv2(x, act_scaling_factor)
-        x, act_scaling_factor = self.quant_act1(self.relu(x), act_scaling_factor, weight_scaling_factor)
+        x, act_scaling_factor = self.quant_act2(self.relu(x), act_scaling_factor, weight_scaling_factor)
         # x = F.max_pool2d(x, 2)
-        x = self.pool(x, act_scaling_factor)
+        x, act_scaling_factor = self.pool(x, act_scaling_factor)
 
         x = torch.flatten(x, 1)
 
         # fully connected layers 
         x, weight_scaling_factor = self.fc1(x, act_scaling_factor)
-        x, act_scaling_factor = self.quant_act1(self.relu(x), act_scaling_factor, weight_scaling_factor)
+        x, act_scaling_factor = self.quant_act3(self.relu(x), act_scaling_factor, weight_scaling_factor)
 
         x, weight_scaling_factor = self.fc2(x, act_scaling_factor)
         self.relu(x)

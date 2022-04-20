@@ -9,7 +9,7 @@ def disable_export(module):
         module.export_mode = False 
 
 def set_export_mode(module, export_mode):
-    if export_mode:
+    if export_mode == 'enable':
         module.apply(enable_export)
     else:
         module.apply(disable_export)

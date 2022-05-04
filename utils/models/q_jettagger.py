@@ -6,25 +6,23 @@ import torch.nn as nn
 from ..quantization_utils.quant_modules import QuantAct, QuantLinear
 
 
-class three_layer_model(nn.Module):
+class MultiLayerPerceptron(nn.Module):
     def __init__(self):
-        """Multi-Layer Perceptron with <16,64,32,32,5> behavior"""
-        super(three_layer_model, self).__init__()
-        self.quantized_model = False
-        self.input_shape = 16  # (16,)
-        self.fc1 = nn.Linear(self.input_shape, 64)
+        """Multi-Layer Perceptron"""
+        super(MultiLayerPerceptron, self).__init__()
+  
+        self.fc1 = nn.Linear(16, 64)
         self.fc2 = nn.Linear(64, 32)
         self.fc3 = nn.Linear(32, 32)
         self.fc4 = nn.Linear(32, 5)
-        self.act1 = nn.ReLU()
-        self.act2 = nn.ReLU()
-        self.act3 = nn.ReLU()
+
+        self.act = nn.ReLU()
         self.softmax = nn.Softmax(0)
 
     def forward(self, x):
-        x = self.act1(self.fc1(x))
-        x = self.act2(self.fc2(x))
-        x = self.act3(self.fc3(x))
+        x = self.act(self.fc1(x))
+        x = self.act(self.fc2(x))
+        x = self.act(self.fc3(x))
         softmax_out = self.softmax(self.fc4(x))
         return softmax_out
 
@@ -50,12 +48,9 @@ class Q_JetTagger(nn.Module):
                  bias_precision=32,
                  act_precision=16):
         super(Q_JetTagger, self).__init__()
-        self.weight_precision = weight_precision
-        self.bias_precision = bias_precision
-        self.act_precision = act_precision
         
         self.quant_input = QuantAct(act_precision)
-
+        
         self.quant_act1 = QuantAct(act_precision)
         self.quant_act2 = QuantAct(act_precision)
         self.quant_act3 = QuantAct(act_precision)
@@ -105,9 +100,12 @@ class Q_JetTagger(nn.Module):
         return x
 
 
+def jettagger_model():
+    return MultiLayerPerceptron()
+
 def q_jettagger_model(model=None):
     if model == None:
-        model = three_layer_model()
+        model = MultiLayerPerceptron()
     return Q_JetTagger(model)
 
 

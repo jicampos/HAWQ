@@ -50,7 +50,8 @@ def getRandomData(dataset='imagenet', batch_size=512, for_inception=False):
 def getTestData(dataset='imagenet',
                 batch_size=1024,
                 path='data/imagenet',
-                for_inception=False):
+                for_inception=False,
+                data_percentage=0.1):
     """
     Get dataloader of testset 
     dataset: name of the dataset 
@@ -93,6 +94,19 @@ def getTestData(dataset='imagenet',
                                  num_workers=32)
         return test_loader
 
+    elif dataset == 'hlc_jets':
+        from .JetTaggingDataset import JetTaggingDataset
+        test_dataset = JetTaggingDataset(path)
+
+        dataset_length = int(len(test_dataset) * data_percentage)
+        partial_test_dataset, _ = torch.utils.data.random_split(test_dataset, [dataset_length, len(test_dataset)-dataset_length])
+
+        test_loader = DataLoader(partial_test_dataset,
+                                 batch_size=batch_size,
+                                 shuffle=False,
+                                 num_workers=1)
+        return test_loader
+
 
 def getTrainData(dataset='imagenet',
                 batch_size=512,
@@ -129,3 +143,17 @@ def getTrainData(dataset='imagenet',
             num_workers=32, pin_memory=True)
 
         return train_loader
+    
+    elif dataset == 'hlc_jets':
+        from .JetTaggingDataset import JetTaggingDataset
+        train_dataset = JetTaggingDataset(path)
+
+        dataset_length = int(len(train_dataset) * data_percentage)
+        partial_train_dataset, _ = torch.utils.data.random_split(train_dataset, [dataset_length, len(train_dataset)-dataset_length])
+
+        train_loader = torch.utils.data.DataLoader(
+            partial_train_dataset, batch_size=batch_size, shuffle=True,
+            num_workers=1, pin_memory=True)
+
+        return train_loader
+

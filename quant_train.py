@@ -6,6 +6,8 @@ import time
 import logging
 import warnings
 
+from sklearn.metrics import top_k_accuracy_score, accuracy_score
+
 import torch
 import torch.nn as nn
 import torch.nn.parallel
@@ -503,19 +505,19 @@ def train(train_loader, model, criterion, optimizer, epoch, args):
         # measure data loading time
         data_time.update(time.time() - end)
 
-        if args.gpu is not None:
-            images = images.cuda(args.gpu, non_blocking=True)
-        target = target.cuda(args.gpu, non_blocking=True)
+        # if args.gpu is not None:
+        #     images = images.cuda(args.gpu, non_blocking=True)
+        # target = target.cuda(args.gpu, non_blocking=True)
 
         # compute output
-        output = model(images)
-        loss = criterion(output, target)
+        output = model(images.float())
+        loss = criterion(output, target.float())
 
         # measure accuracy and record loss
-        acc1, acc5 = accuracy(output, target, topk=(1, 5))
+        # acc1, acc5 = accuracy(output, target.float(), topk=(1, 5))
         losses.update(loss.item(), images.size(0))
-        top1.update(acc1[0], images.size(0))
-        top5.update(acc5[0], images.size(0))
+        # top1.update(acc1[0], images.size(0))
+        # top5.update(acc5[0], images.size(0))
 
         # compute gradient and do SGD step
         optimizer.zero_grad()
@@ -528,6 +530,8 @@ def train(train_loader, model, criterion, optimizer, epoch, args):
 
         if i % args.print_freq == 0:
             progress.display(i)
+    
+    return losses.avg
 
 
 def train_kd(train_loader, model, teacher, criterion, optimizer, epoch, val_loader, args, ngpus_per_node,
@@ -636,22 +640,29 @@ def validate(val_loader, model, criterion, args):
     freeze_model(model)
     model.eval()
 
+    predlist = torch.zeros(0, dtype=torch.long, device='cpu')
+    lbllist = torch.zeros(0, dtype=torch.long, device='cpu')
+
     with torch.no_grad():
         end = time.time()
         for i, (images, target) in enumerate(val_loader):
-            if args.gpu is not None:
-                images = images.cuda(args.gpu, non_blocking=True)
-            target = target.cuda(args.gpu, non_blocking=True)
+            # if args.gpu is not None:
+            #     images = images.cuda(args.gpu, non_blocking=True)
+            # target = target.cuda(args.gpu, non_blocking=True)
 
             # compute output
-            output = model(images)
-            loss = criterion(output, target)
+            output = model(images.float())
+            loss = criterion(output, target.float())
 
             # measure accuracy and record loss
-            acc1, acc5 = accuracy(output, target, topk=(1, 5))
+            # acc1, acc5 = accuracy(output, target.float(), topk=(1, 5))
             losses.update(loss.item(), images.size(0))
-            top1.update(acc1[0], images.size(0))
-            top5.update(acc5[0], images.size(0))
+            # top1.update(acc1[0], images.size(0))
+            # top5.update(acc5[0], images.size(0))
+
+            _, preds = torch.max(output, 1)
+            predlist = torch.cat([predlist, preds.view(-1).cpu()])
+            lbllist = torch.cat([lbllist, torch.max(target, 1)[1].view(-1).cpu()])
 
             # measure elapsed time
             batch_time.update(time.time() - end)
@@ -659,6 +670,12 @@ def validate(val_loader, model, criterion, args):
 
             if i % args.print_freq == 0:
                 progress.display(i)
+        
+        outputs = output.cpu()
+        local_labels = target.cpu()
+        predict_test = outputs.numpy()
+        accuracy_value = accuracy_score(np.nan_to_num(lbllist.numpy()), np.nan_to_num(predlist.numpy()))
+        top1.update(accuracy_value, 1)
 
         logging.info(' * Acc@1 {top1.avg:.3f} Acc@5 {top5.avg:.3f}'.format(top1=top1, top5=top5))
 

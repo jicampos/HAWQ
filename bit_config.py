@@ -1,5 +1,60 @@
 bit_config_dict = {
 
+"bit_config_jettagger_uniform8" : {
+},
+
+"bit_config_hawq_jettagger_uniform8" : {
+    'quant_input': 8, 
+    'quant_act1': 8,
+    'quant_act2': 8,
+    'quant_act3': 8,
+    'quant_act4': 8,
+
+    'features.fc1': 8,
+    'features.fc2': 8,
+    'features.fc3': 8,
+    'features.fc4': 8
+},
+
+"bit_config_hawq_jettagger_uniform12" : {
+    'quant_input': 12, 
+    'quant_act1': 12,
+    'quant_act2': 12,
+    'quant_act3': 12,
+    'quant_act4': 12,
+
+    'features.fc1': 12,
+    'features.fc2': 12,
+    'features.fc3': 12,
+    'features.fc4': 12
+},
+
+"bit_config_hawq_jettagger_uniform16" : {
+    'quant_input': 16, 
+    'quant_act1': 16,
+    'quant_act2': 16,
+    'quant_act3': 16,
+    'quant_act4': 16,
+
+    'features.fc1': 16,
+    'features.fc2': 16,
+    'features.fc3': 16,
+    'features.fc4': 16
+},
+
+"bit_config_hawq_jettagger_uniform24" : {
+    'quant_input': 24, 
+    'quant_act1': 24,
+    'quant_act2': 24,
+    'quant_act3': 24,
+    'quant_act4': 24,
+
+    'features.fc1': 24,
+    'features.fc2': 24,
+    'features.fc3': 24,
+    'features.fc4': 24
+},
+
 "bit_config_resnet18_uniform8" : {
 'quant_input': 8,
 'quant_init_block_convbn': 8,

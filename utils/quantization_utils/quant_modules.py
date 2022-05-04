@@ -54,8 +54,12 @@ class QuantLinear(Module):
 
     def __repr__(self):
         s = super(QuantLinear, self).__repr__()
-        s = "(" + s + " weight_bit={}, full_precision_flag={}, quantize_fn={})".format(
+        if self.bias_bit is None:
+            s = "(" + s + " weight_bit={}, full_precision_flag={}, quantize_fn={})".format(
             self.weight_bit, self.full_precision_flag, self.quant_mode)
+        else:
+            s = "(" + s + " weight_bit={}, bias_bit={}, full_precision_flag={}, quantize_fn={})".format(
+            self.weight_bit, self.bias_bit, self.full_precision_flag, self.quant_mode)
         return s
 
     def set_param(self, linear):

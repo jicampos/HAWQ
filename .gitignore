@@ -135,8 +135,12 @@ dmypy.json
 # macOS
 .DS_Store
 
-# virtualenv
+# virtualenvs
 .hawq/
+hawq-venv/
+
+# checkpoints
+checkpoints/
 
 # other files 
 *.onnx

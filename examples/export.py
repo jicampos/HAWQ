@@ -333,6 +333,51 @@ def register_custom_ops():
     for func in HAWQ_FUNCS:
         register_custom_op_symbolic(f'{DOMAIN_STRING}::{func.name}', func.symbolic, 1)
 
+def rename_node_vars(onnx_model):
+    # rename node names 
+    name_counter = 0
+    
+    for node in onnx_model.graph.node:
+        if node.name == '':
+            node.name = f'node_{name_counter}'
+            name_counter += 1
+    
+    # change input name 
+    output =[node.name for node in onnx_model.graph.output]
+
+    input_all = [node.name for node in onnx_model.graph.input]
+    input_initializer =  [node.name for node in onnx_model.graph.initializer]
+    net_feed_input = list(set(input_all)  - set(input_initializer))
+
+    print('Inputs: ', net_feed_input)
+    print('Outputs: ', output)
+
+    input_nodes = [node for node in onnx_model.graph.input if node.name in net_feed_input]
+    in_node = input_nodes[0]
+    print(in_node)
+
+    default_name = in_node.name 
+    in_node.name = 'global_in'
+
+    print(in_node)
+
+    # change all references to default input name 
+    for node in model.graph.node: 
+        if default_name in node.input:
+            for i, input in enumerate(node.input):
+                if input == default_name:
+                    node.input[i] = 'global_in'
+
+def optimize_onnx_model(model_path):
+    model_opt_path = f'{model_path.split(".")[0]}_optimized.onnx'
+
+    # change constant operators to initializer 
+    onnx_model = onnxoptimizer.optimize(onnx.load_model(model_path), passes=['extract_constant_to_initializer'])
+    # rename each node, input and input references  
+    rename_node_vars(onnx_model)
+
+    onnx.save_model(onnx_model, model_opt_path)
+
 def export_to_qonnx(model, input, filename=None, save=True):
     if model is None:
         raise ValueError('Model cannot be None')
@@ -367,7 +412,8 @@ def export_to_qonnx(model, input, filename=None, save=True):
                     keep_initializers_as_inputs=True,
                     operator_export_type=torch.onnx.OperatorExportTypes.ONNX_ATEN_FALLBACK,
                     custom_opsets={DOMAIN_STRING: 1})
-                  
+                
+                optimize_onnx_model(filename)
     return export_model
 
 # ------------------------------------------------------------

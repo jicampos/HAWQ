@@ -141,6 +141,7 @@ hawq-venv/
 
 # checkpoints
 checkpoints/
+*.pth*
 
 # other files 
 *.onnx

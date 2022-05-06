@@ -461,8 +461,8 @@ if __name__ == '__main__':
     print(model)
     print('-----------------------------------------------------------------------------')
 
-    # from save_checkpoint import load_checkpoint
-    # load_checkpoint(model, 'checkpoint.pth.tar')
+    from save_checkpoint import load_checkpoint
+    load_checkpoint(model, 'model_best.pth.tar')
     export_model = export_to_qonnx(model, x, save=True)
 
     print('New layers:')

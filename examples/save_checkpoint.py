@@ -23,21 +23,25 @@ def create_checkpoint(model):
                 'optimizer': {},
             }, False, './')
 
-
 def print_checkpoint(filename):
     checkpoint = torch.load(filename, map_location=torch.device('cpu'))
 
     for name, val in checkpoint.items():
         print(name, type(val))
 
-
 def load_checkpoint(model, filename):
-    checkpoint = torch.load(filename, map_location=torch.device('cpu'))
-    # model.load_state_dict(checkpoint['state_dict']) 
-    for name, val in checkpoint['state_dict'].items():
-        print(name, type(val))
-        setattr(model, name, val)
-    bp = 0
+    checkpoint = torch.load(filename, map_location=torch.device('cpu'))['state_dict']
+    model_state_dict = model.state_dict()
+    
+    modified_dict = {}
+    
+    for key, value in checkpoint.items():
+        if model_state_dict[key].shape != value.shape:
+            value = torch.tensor([value])
+        modified_dict[key] = value
+    
+    model.load_state_dict(modified_dict, strict=False)
+
 
 if __name__ == '__main__':
 

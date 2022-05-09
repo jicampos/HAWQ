@@ -1,9 +1,5 @@
 import os
-import random
-import shutil
-import time
 import logging
-import warnings
 import json
 from datetime import datetime 
 
@@ -11,16 +7,16 @@ import torch
 import torch.nn as nn
 import torch.optim
 import torch.utils.data
-from sklearn.metrics import accuracy_score
 
-from quant_train import train
-from quant_train import validate
-from quant_train import save_checkpoint
-from quant_train import adjust_learning_rate
-
+import utils 
 from args import *
 from utils import *
 from bit_config import *
+
+from utils import train
+from utils import validate
+from utils import save_checkpoint
+from utils import adjust_learning_rate
 
 quantize_arch_dict = {'jettagger': utils.models.q_jettagger.jettagger_model,
                       'hawq_jettagger': utils.models.q_jettagger.q_jettagger_model,

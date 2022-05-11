@@ -54,7 +54,6 @@ class Q_JetTagger(nn.Module):
         self.quant_act1 = QuantAct(act_precision)
         self.quant_act2 = QuantAct(act_precision)
         self.quant_act3 = QuantAct(act_precision)
-        self.quant_act4 = QuantAct(act_precision)
 
         self.features = nn.Sequential()
 
@@ -96,7 +95,6 @@ class Q_JetTagger(nn.Module):
         # the FC4/Output block, 32 -> 5
         x, weight_scaling_factor = self.features.fc4(x, act_scaling_factor)
         x = self.features.softmax(x)
-        x, act_scaling_factor = self.quant_act4(x, act_scaling_factor, weight_scaling_factor)
         return x
 
 

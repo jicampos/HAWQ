@@ -10,6 +10,9 @@ import warnings
 import os, sys
 sys.path.insert(1, os.path.abspath('.'))
 
+import onnx     
+import onnxoptimizer
+
 import torch
 import torch.autograd
 from torch.onnx import register_custom_op_symbolic
@@ -362,7 +365,7 @@ def rename_node_vars(onnx_model):
     print(in_node)
 
     # change all references to default input name 
-    for node in model.graph.node: 
+    for node in onnx_model.graph.node: 
         if default_name in node.input:
             for i, input in enumerate(node.input):
                 if input == default_name:
@@ -387,7 +390,7 @@ def export_to_qonnx(model, input, filename=None, save=True):
     if filename is None:
         from datetime import datetime
         now = datetime.now() # current date and time
-        date_time = now.strftime('%m%d%Y%H%M%S')
+        date_time = now.strftime('%m%d%Y_%H%M%S')
         filename = f'results/{model._get_name()}_{date_time}.onnx'
 
     register_custom_ops()
@@ -406,13 +409,12 @@ def export_to_qonnx(model, input, filename=None, save=True):
             if save:
                 print('Exporting model...')
                 torch.onnx.export(
-                    model=export_model, 
-                    args=input, 
-                    f=filename, 
-                    keep_initializers_as_inputs=True,
-                    operator_export_type=torch.onnx.OperatorExportTypes.ONNX_ATEN_FALLBACK,
-                    custom_opsets={DOMAIN_STRING: 1})
-                
+                                model=export_model, 
+                                args=input, 
+                                f=filename, 
+                                keep_initializers_as_inputs=True,
+                                operator_export_type=torch.onnx.OperatorExportTypes.ONNX_ATEN_FALLBACK,
+                                custom_opsets={DOMAIN_STRING: 1})
                 optimize_onnx_model(filename)
     return export_model
 
@@ -462,8 +464,12 @@ if __name__ == '__main__':
     print('-----------------------------------------------------------------------------')
 
     from save_checkpoint import load_checkpoint
-    load_checkpoint(model, 'model_best.pth.tar')
-    export_model = export_to_qonnx(model, x, save=True)
+    # load_checkpoint(model, 'checkpoints/20220504_151021/model_best.pth.tar')
+    # load_checkpoint(model, 'checkpoints/20220506_134248/model_best.pth.tar')
+    # load_checkpoint(model, 'checkpoints/20220509_151452/model_best.pth.tar')
+    date = '20220510_123056'
+    load_checkpoint(model, f'checkpoints/{date}/model_best.pth.tar')
+    export_model = export_to_qonnx(model, x, filename=f'Q_Jettagger_{date}.onnx' ,save=True)
 
     print('New layers:')
     print('-----------------------------------------------------------------------------')

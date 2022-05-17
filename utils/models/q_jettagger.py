@@ -50,58 +50,58 @@ class Q_JetTagger(nn.Module):
         super(Q_JetTagger, self).__init__()
         
         self.quant_input = QuantAct(act_precision)
-        
+
+        layer = getattr(model, 'fc1')
+        quant_layer = QuantLinear(weight_bit=weight_precision,bias_bit=bias_precision)
+        quant_layer.set_param(layer)
+        setattr(self, 'fc1', quant_layer)
         self.quant_act1 = QuantAct(act_precision)
+
+        layer = getattr(model, 'fc2')
+        quant_layer = QuantLinear(weight_bit=weight_precision,bias_bit=bias_precision)
+        quant_layer.set_param(layer)
+        setattr(self, 'fc2', quant_layer)
         self.quant_act2 = QuantAct(act_precision)
+
+        layer = getattr(model, 'fc3')
+        quant_layer = QuantLinear(weight_bit=weight_precision,bias_bit=bias_precision)
+        quant_layer.set_param(layer)
+        setattr(self, 'fc3', quant_layer)
         self.quant_act3 = QuantAct(act_precision)
 
-        self.features = nn.Sequential()
+        layer = getattr(model, 'fc4')
+        quant_layer = QuantLinear(weight_bit=weight_precision,bias_bit=bias_precision)
+        quant_layer.set_param(layer)
+        setattr(self, 'fc4', quant_layer)
 
-        fc1_data = getattr(model, 'fc1')
-        self.features.add_module("fc1", QuantLinear(weight_precision,bias_bit=bias_precision))
-        self.features.add_module("act1", nn.ReLU())
-        self.features.fc1.set_param(fc1_data)
-
-        fc2_data = getattr(model, 'fc2')
-        self.features.add_module("fc2", QuantLinear(weight_precision,bias_bit=bias_precision))
-        self.features.add_module("act2", nn.ReLU())
-        self.features.fc2.set_param(fc2_data)
-
-        fc3_data = getattr(model, 'fc3')
-        self.features.add_module("fc3", QuantLinear(weight_precision,bias_bit=bias_precision))
-        self.features.add_module("act3", nn.ReLU())
-        self.features.fc3.set_param(fc3_data)
-
-        fc4_data = getattr(model, 'fc4')
-        self.features.add_module("fc4", QuantLinear(weight_precision,bias_bit=bias_precision))
-        self.features.add_module("softmax", nn.Softmax(0))
-        self.features.fc4.set_param(fc4_data)
+        self.act = nn.ReLU()
+        self.softmax = nn.Softmax(dim=1)
 
     def forward(self, x):
-        # quantize input
         x, act_scaling_factor = self.quant_input(x)
-        # the FC1 block, 16 -> 64
-        x, weight_scaling_factor = self.features.fc1(x, act_scaling_factor)
-        x = self.features.act1(x)
+        
+        x, weight_scaling_factor = self.fc1(x, act_scaling_factor)
+        x = self.act(x)
         x, act_scaling_factor = self.quant_act1(x, act_scaling_factor, weight_scaling_factor)
-        # the FC2 block, 64 -> 32
-        x, weight_scaling_factor = self.features.fc2(x, act_scaling_factor)
-        x = self.features.act2(x)
+
+        x, weight_scaling_factor = self.fc2(x, act_scaling_factor)
+        x = self.act(x)
         x, act_scaling_factor = self.quant_act2(x, act_scaling_factor, weight_scaling_factor)
-        # the FC3 block, 32 -> 32
-        x, weight_scaling_factor = self.features.fc3(x, act_scaling_factor)
-        x = self.features.act3(x)
+
+        x, weight_scaling_factor = self.fc3(x, act_scaling_factor)
+        x = self.act(x)
         x, act_scaling_factor = self.quant_act3(x, act_scaling_factor, weight_scaling_factor)
-        # the FC4/Output block, 32 -> 5
-        x, weight_scaling_factor = self.features.fc4(x, act_scaling_factor)
-        x = self.features.softmax(x)
+
+        x, weight_scaling_factor = self.fc4(x, act_scaling_factor)
+        x = self.softmax(x)
+        
         return x
 
 
-def jettagger_model():
+def jettagger_model(**kwargs):
     return MultiLayerPerceptron()
 
-def q_jettagger_model(model=None):
+def q_jettagger_model(model, **kwargs):
     if model == None:
         model = MultiLayerPerceptron()
     return Q_JetTagger(model)

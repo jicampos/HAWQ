@@ -145,3 +145,6 @@ checkpoints/
 
 # other files 
 *.onnx
+
+# hls4ml projects
+hls4mlprj_q_jettag/

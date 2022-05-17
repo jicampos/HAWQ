@@ -10,10 +10,28 @@ bit_config_dict = {
     'quant_act3': 4,
     'quant_act4': 4,
 
-    'features.fc1': 4,
-    'features.fc2': 4,
-    'features.fc3': 4,
-    'features.fc4': 4
+    'fc1': 4,
+    'fc2': 4,
+    'fc3': 4,
+    'fc4': 4
+},
+
+"bit_config_hawq_jettagger_uniform6" : {
+    'quant_input': 6, 
+    'quant_act1': 6,
+    'quant_act2': 6,
+    'quant_act3': 6,
+    'quant_act4': 6,
+
+    'fc1': 6,
+    'fc2': 6,
+    'fc3': 6,
+    'fc4': 6,
+
+    'fc1_bias': 6,
+    'fc2_bias': 6,
+    'fc3_bias': 6,
+    'fc4_bias': 6,
 },
 
 "bit_config_hawq_jettagger_uniform8" : {
@@ -23,10 +41,10 @@ bit_config_dict = {
     'quant_act3': 8,
     'quant_act4': 8,
 
-    'features.fc1': 8,
-    'features.fc2': 8,
-    'features.fc3': 8,
-    'features.fc4': 8
+    'fc1': 8,
+    'fc2': 8,
+    'fc3': 8,
+    'fc4': 8
 },
 
 "bit_config_hawq_jettagger_uniform12" : {
@@ -36,10 +54,33 @@ bit_config_dict = {
     'quant_act3': 12,
     'quant_act4': 12,
 
-    'features.fc1': 12,
-    'features.fc2': 12,
-    'features.fc3': 12,
-    'features.fc4': 12
+    'fc1': 12,
+    'fc2': 12,
+    'fc3': 12,
+    'fc4': 12,
+
+    'fc1_bias': 12,
+    'fc2_bias': 12,
+    'fc3_bias': 12,
+    'fc4_bias': 12
+},
+
+"bit_config_hawq_jettagger_uniform12_bias13" : {
+    'quant_input': 12, 
+    'quant_act1': 12,
+    'quant_act2': 12,
+    'quant_act3': 12,
+    'quant_act4': 12,
+
+    'fc1': 12,
+    'fc2': 12,
+    'fc3': 12,
+    'fc4': 12,
+
+    'fc1_bias': 13,
+    'fc2_bias': 13,
+    'fc3_bias': 13,
+    'fc4_bias': 13
 },
 
 "bit_config_hawq_jettagger_uniform16" : {
@@ -49,10 +90,15 @@ bit_config_dict = {
     'quant_act3': 16,
     'quant_act4': 16,
 
-    'features.fc1': 16,
-    'features.fc2': 16,
-    'features.fc3': 16,
-    'features.fc4': 16
+    'fc1': 16,
+    'fc2': 16,
+    'fc3': 16,
+    'fc4': 16,
+
+    'fc1_bias': 16,
+    'fc2_bias': 16,
+    'fc3_bias': 16,
+    'fc4_bias': 16
 },
 
 "bit_config_hawq_jettagger_uniform24" : {
@@ -62,10 +108,15 @@ bit_config_dict = {
     'quant_act3': 24,
     'quant_act4': 24,
 
-    'features.fc1': 24,
-    'features.fc2': 24,
-    'features.fc3': 24,
-    'features.fc4': 24
+    'fc1': 24,
+    'fc2': 24,
+    'fc3': 24,
+    'fc4': 24,
+
+    'fc1_bias': 24,
+    'fc2_bias': 24,
+    'fc3_bias': 24,
+    'fc4_bias': 24
 },
 
 "bit_config_hawq_jettagger_uniform30" : {
@@ -75,10 +126,10 @@ bit_config_dict = {
     'quant_act3': 30,
     'quant_act4': 30,
 
-    'features.fc1': 30,
-    'features.fc2': 30,
-    'features.fc3': 30,
-    'features.fc4': 30
+    'fc1': 30,
+    'fc2': 30,
+    'fc3': 30,
+    'fc4': 30
 },
 
 "bit_config_resnet18_uniform8" : {

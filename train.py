@@ -25,17 +25,17 @@ quantize_arch_dict = {'jettagger': utils.models.q_jettagger.jettagger_model,
 
 
 train_loader = utils.getTrainData(dataset='hlc_jets',
-                                    batch_size=32,
+                                    batch_size=args.batch_size,
                                     path='/data1/jcampos/HAWQ-main/data/train',
                                     for_inception=False,
                                     data_percentage=1)
 val_loader = utils.getTestData(dataset='hlc_jets',
-                                    batch_size=32,
+                                    batch_size=args.batch_size,
                                     path='/data1/jcampos/HAWQ-main/data/val',
-                                    data_percentage=0.1)
+                                    data_percentage=1)
 
 
-def main(config=None, bias=None):
+def main(bit_config_key=None):
 
     now = datetime.now() # current date and time
     date_time = now.strftime('%m%d%Y_%H%M%S')
@@ -43,35 +43,35 @@ def main(config=None, bias=None):
     if not os.path.exists(args.save_path):
         os.makedirs(args.save_path)
 
-    if not os.path.exists(os.path.join(args.save_path, date_time)):
-        os.makedirs(os.path.join(args.save_path, date_time))
+    if not os.path.exists(os.path.join(args.save_path, args.quant_scheme, date_time)):
+        os.makedirs(os.path.join(args.save_path, args.quant_scheme, date_time))
 
-    save_path = os.path.join(args.save_path, date_time) + '/'
+    save_path = os.path.join(args.save_path, args.quant_scheme, date_time) + '/'
+    logging.basicConfig(format='%(asctime)s - %(message)s', filemode='w', 
+                    datefmt='%d-%b-%y %H:%M:%S', filename=save_path+'training.log', 
+                    encoding='utf-8', level=logging.DEBUG)
+    logging.info(args)
 
-    print('----------------------------------------------------------')
-    print(f'Saving to: {save_path}')
-    print('----------------------------------------------------------')
-
-    print(f'Loading {args.arch}...')
-    model = quantize_arch_dict[args.arch]()
+    model = quantize_arch_dict[args.arch](model=None)
 
     if args.resume:
+        logging.info(f'Loading checkpoint: {args.resume}')
         load_checkpoint(model, args.resume)
 
-    if config is None:
-        config = "bit_config_" + args.arch + "_" + args.quant_scheme
-    if bias is not None:
-        args.bias_bit = bias
-
-    
-    bit_config = bit_config_dict[config]
-
+    bit_config = bit_config_dict[bit_config_key]
+    logging.info(f'Loading bit config: {bit_config}')
     set_bit_config(model, bit_config, args)
-    print(model)
+
+    logging.info('======================================================================')
+    logging.info(model)
+    logging.info('======================================================================')
 
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
     criterion = nn.BCELoss()
 
+    threshold = 1e-6
+    max_patience = 15
+    patience = 0
     best_epoch = 0
     best_acc1 = 0
     loss_record = list()
@@ -90,6 +90,14 @@ def main(config=None, bias=None):
         loss_record.append(epoch_loss)
         acc_record.append(acc1)
 
+        if np.abs(acc1-acc_record[-1]) < threshold:
+            patience += 1
+        else:
+            patience = 0
+        if patience == max_patience:
+            logging.info(f'Patience {patience} reached. Exiting training.')
+            break
+
         # remember best acc@1 and save checkpoint
         is_best = acc1 > best_acc1
         best_acc1 = max(acc1, best_acc1)
@@ -98,54 +106,59 @@ def main(config=None, bias=None):
         if is_best:
             # record the best epoch
             best_epoch = epoch
-            
+
             save_checkpoint({
                 'epoch': epoch + 1,
                 'arch': args.arch,
                 'state_dict': model.state_dict(),
                 'best_acc1': best_acc1,
                 'optimizer': optimizer.state_dict(),
+                'bit_config': bit_config
             }, is_best, save_path)
-    
-    filename = 'model_loss_{}.json'.format(args.arch)
-    with open(os.path.join(save_path, filename), 'w') as fp:
-        json.dump(loss_record, fp)
 
-    filename = 'model_{}_acc_{}.json'.format(args.arch, best_acc1)
-    with open(os.path.join(save_path, filename), 'w') as fp:
-        json.dump(acc_record, fp)
-    
-    f = open(os.path.join(save_path, "log.txt"), "x")
-    f.write(f'arch: {args.arch}\n')
-    f.write(f'bit-config: {config}\n')
-    f.write(f'bias-bit: {args.bias_bit}\n')
-    f.write(f'resume: {args.resume}\n')
-    f.write(f'best-epoch: {best_epoch}\n')
-    f.write(f'best-acc: {best_acc1}\n')
-    f.close()
+    try:
+        filename = 'model_loss.json'
+        with open(os.path.join(save_path, filename), 'w') as fp:
+            json.dump(loss_record, fp)
+    except:
+        logging.error(f'Could not write training loss to {filename}')
+
+    try:
+        filename = f'model_{args.arch}_acc_{best_acc1:.4}.json'
+        with open(os.path.join(save_path, filename), 'w') as fp:
+            json.dump(acc_record, fp)
+    except:
+        logging.error(f'Could not write training accuracy to {filename}')
+
+    try:
+        # log model configuration and training info
+        logging.info('======================================================================')
+        logging.info(f'arch: {args.arch}')
+        logging.info(f'best-acc: {best_acc1}')
+        logging.info(f'best-epoch: {best_epoch+1}')
+        logging.info(f'patience-readed: {patience==max_patience}/{max_patience}')
+        logging.info(f'resume: {args.resume}')
+        logging.info(f'bit-config-key: {bit_config_key}')
+        logging.info(f'bit-config: {bit_config}')
+        logging.info('======================================================================')
+    except:
+        logging.error('Could not log model configuration and training info.')
 
 
 # python train.py --arch hawq_jettagger --lr 0.001 --batch-size 1024 --data data/ --save-path checkpoints/ --quant-scheme uniform8 --bias-bit 8 --quant-mode symmetric --epochs 15
-# python train.py -a jettagger --epochs  --lr 0.001 --batch-size 1024 --data data/ --critoptoverride --save-path checkpoints/ --data-percentage 0.75  --checkpoint-iter -1 --quant-scheme uniform8 
-
 if __name__ == '__main__':
-    configs = [
+
+    bit_configs = [
         'bit_config_hawq_jettagger_uniform4',
+        'bit_config_hawq_jettagger_uniform6',
         'bit_config_hawq_jettagger_uniform8',
         'bit_config_hawq_jettagger_uniform12',
         'bit_config_hawq_jettagger_uniform16',
         'bit_config_hawq_jettagger_uniform24'
     ]
 
-    config_bias = [
-        4,
-        8,
-        12, 
-        16, 
-        24
-    ]
-    
     # for config, bias in zip(config, config_bias):
-    #     main(config, bias)
+    #     main(config)
 
-    main()
+    bit_config = "bit_config_" + args.arch + "_" + args.quant_scheme
+    main(bit_config_key=bit_config)

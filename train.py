@@ -12,6 +12,7 @@ from quant_train import train
 from quant_train import validate
 from quant_train import save_checkpoint
 from quant_train import adjust_learning_rate
+from train_utils import reset_logging
 
 import utils 
 from args import *
@@ -34,6 +35,13 @@ val_loader = utils.getTestData(dataset='hlc_jets',
                                     path='/data1/jcampos/HAWQ-main/data/val',
                                     data_percentage=1)
 
+now = datetime.now() # current date and time
+DATE_TIME = now.strftime('%m%d%Y_%H%M%S')
+
+model = quantize_arch_dict[args.arch](model=None)
+
+def get_quant_scheme(bit_config_key):
+    return bit_config_key.split('bit_config_hawq_jettagger_')[1]
 
 def main(bit_config_key=None):
 
@@ -42,14 +50,17 @@ def main(bit_config_key=None):
 
     if not os.path.exists(args.save_path):
         os.makedirs(args.save_path)
+    
+    quant_scheme = get_quant_scheme(bit_config_key)
+    if not os.path.exists(os.path.join(args.save_path, quant_scheme, date_time)):
+        os.makedirs(os.path.join(args.save_path, quant_scheme, date_time))
 
-    if not os.path.exists(os.path.join(args.save_path, args.quant_scheme, date_time)):
-        os.makedirs(os.path.join(args.save_path, args.quant_scheme, date_time))
-
-    save_path = os.path.join(args.save_path, args.quant_scheme, date_time) + '/'
+    save_path = os.path.join(args.save_path, quant_scheme, date_time) + '/'
     logging.basicConfig(format='%(asctime)s - %(message)s', filemode='w', 
                     datefmt='%d-%b-%y %H:%M:%S', filename=save_path+'training.log', 
                     encoding='utf-8', level=logging.DEBUG)
+    logging.getLogger().setLevel(logging.INFO)
+    logging.getLogger().addHandler(logging.StreamHandler())
     logging.info(args)
 
     model = quantize_arch_dict[args.arch](model=None)
@@ -69,9 +80,6 @@ def main(bit_config_key=None):
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
     criterion = nn.BCELoss()
 
-    threshold = 1e-6
-    max_patience = 15
-    patience = 0
     best_epoch = 0
     best_acc1 = 0
     loss_record = list()
@@ -89,14 +97,6 @@ def main(bit_config_key=None):
 
         loss_record.append(epoch_loss)
         acc_record.append(acc1)
-
-        if np.abs(acc1-acc_record[-1]) < threshold:
-            patience += 1
-        else:
-            patience = 0
-        if patience == max_patience:
-            logging.info(f'Patience {patience} reached. Exiting training.')
-            break
 
         # remember best acc@1 and save checkpoint
         is_best = acc1 > best_acc1
@@ -135,8 +135,8 @@ def main(bit_config_key=None):
         logging.info('======================================================================')
         logging.info(f'arch: {args.arch}')
         logging.info(f'best-acc: {best_acc1}')
-        logging.info(f'best-epoch: {best_epoch+1}')
-        logging.info(f'patience-readed: {patience==max_patience}/{max_patience}')
+        logging.info(f'best-epoch: {best_epoch+1}/{args.epochs}')
+        logging.info(f'patience-readed: {patience_counter==patience}/{patience}')
         logging.info(f'resume: {args.resume}')
         logging.info(f'bit-config-key: {bit_config_key}')
         logging.info(f'bit-config: {bit_config}')
@@ -144,21 +144,24 @@ def main(bit_config_key=None):
     except:
         logging.error('Could not log model configuration and training info.')
 
+    # log best accuracy 
+    # filename = os.path.join(args.save_path, quant_scheme, 'best.txt')  # best accuracy stored in quant scheme directory 
+    filename = os.path.join(args.save_path, f'{DATE_TIME}.txt')  # best accuracy stored in seperate file under checkpoints for this run 
+    with open(filename, 'a+') as fp:
+        fp.write(f'{date_time}-{quant_scheme}: {best_acc1}\n')
 
-# python train.py --arch hawq_jettagger --lr 0.001 --batch-size 1024 --data data/ --save-path checkpoints/ --quant-scheme uniform8 --bias-bit 8 --quant-mode symmetric --epochs 15
+    reset_logging()
+
+# python train.py --arch hawq_jettagger --lr 0.001 --batch-size 1024 --save-path checkpoints/  --quant-mode symmetric --epochs 25
 if __name__ == '__main__':
 
     bit_configs = [
-        'bit_config_hawq_jettagger_uniform4',
         'bit_config_hawq_jettagger_uniform6',
-        'bit_config_hawq_jettagger_uniform8',
-        'bit_config_hawq_jettagger_uniform12',
-        'bit_config_hawq_jettagger_uniform16',
-        'bit_config_hawq_jettagger_uniform24'
+        'bit_config_hawq_jettagger_uniform6',
+        'bit_config_hawq_jettagger_uniform6',
+        'bit_config_hawq_jettagger_uniform6',
+        'bit_config_hawq_jettagger_uniform6'
     ]
 
-    # for config, bias in zip(config, config_bias):
-    #     main(config)
-
-    bit_config = "bit_config_" + args.arch + "_" + args.quant_scheme
-    main(bit_config_key=bit_config)
+    for config in bit_configs:
+        main(config)

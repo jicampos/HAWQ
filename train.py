@@ -136,7 +136,6 @@ def main(bit_config_key=None):
         logging.info(f'arch: {args.arch}')
         logging.info(f'best-acc: {best_acc1}')
         logging.info(f'best-epoch: {best_epoch+1}/{args.epochs}')
-        logging.info(f'patience-readed: {patience_counter==patience}/{patience}')
         logging.info(f'resume: {args.resume}')
         logging.info(f'bit-config-key: {bit_config_key}')
         logging.info(f'bit-config: {bit_config}')

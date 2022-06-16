@@ -173,6 +173,8 @@ logging.getLogger().addHandler(logging.StreamHandler())
 
 logging.info(args)
 
+from train_utils import reset_logging
+reset_logging()
 
 def main():
     if args.seed is not None:

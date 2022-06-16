@@ -19,38 +19,43 @@ def load_checkpoint(model, filename):
         setattr(model, name, val)
 
 def set_bit_config(model, bit_config, args):
-    for name, m in model.named_modules():
+    for name, module in model.named_modules():
         if name in bit_config.keys():
-            setattr(m, 'quant_mode', args.quant_mode)
-            setattr(m, 'bias_bit', args.bias_bit)
-            setattr(m, 'quantize_bias', (args.bias_bit != 0))
-            setattr(m, 'per_channel', args.channel_wise)
-            setattr(m, 'act_percentile', args.act_percentile)
-            setattr(m, 'act_range_momentum', args.act_range_momentum)
-            setattr(m, 'weight_percentile', args.weight_percentile)
-            setattr(m, 'fix_flag', False)
-            setattr(m, 'fix_BN', args.fix_BN)
-            setattr(m, 'fix_BN_threshold', args.fix_BN_threshold)
-            setattr(m, 'training_BN_mode', args.fix_BN)
-            setattr(m, 'checkpoint_iter_threshold', args.checkpoint_iter)
-            setattr(m, 'save_path', args.save_path)
-            setattr(m, 'fixed_point_quantization', args.fixed_point_quantization)
+            setattr(module, 'quant_mode', args.quant_mode)
+            setattr(module, 'bias_bit', args.bias_bit)
+            setattr(module, 'quantize_bias', (args.bias_bit != 0))
+            setattr(module, 'per_channel', args.channel_wise)
+            setattr(module, 'act_percentile', args.act_percentile)
+            setattr(module, 'act_range_momentum', args.act_range_momentum)
+            setattr(module, 'weight_percentile', args.weight_percentile)
+            setattr(module, 'fix_flag', False)
+            setattr(module, 'fix_BN', args.fix_BN)
+            setattr(module, 'fix_BN_threshold', args.fix_BN_threshold)
+            setattr(module, 'training_BN_mode', args.fix_BN)
+            setattr(module, 'checkpoint_iter_threshold', args.checkpoint_iter)
+            setattr(module, 'save_path', args.save_path)
+            setattr(module, 'fixed_point_quantization', args.fixed_point_quantization)
 
             if type(bit_config[name]) is tuple:
                 bitwidth = bit_config[name][0]
                 if bit_config[name][1] == 'hook':
-                    m.register_forward_hook(hook_fn_forward)
+                    module.register_forward_hook(hook_fn_forward)
                     global hook_keys
                     hook_keys.append(name)
             else:
                 bitwidth = bit_config[name]
+                if hasattr(module, 'bias'):
+                    bias_bitwidth = bit_config[name+'_bias']
 
-            if hasattr(m, 'activation_bit'):
-                setattr(m, 'activation_bit', bitwidth)
+            if hasattr(module, 'activation_bit'):
+                setattr(module, 'activation_bit', bitwidth)
                 if bitwidth == 4:
-                    setattr(m, 'quant_mode', 'asymmetric')
+                    setattr(module, 'quant_mode', 'asymmetric')
             else:
-                setattr(m, 'weight_bit', bitwidth)
+                setattr(module, 'weight_bit', bitwidth)
+                if hasattr(module, 'bias'):
+                    setattr(module, 'bias_bit', bias_bitwidth)
+
 
 
 def train(train_loader, model, criterion, optimizer, epoch, args):

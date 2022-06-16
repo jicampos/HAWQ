@@ -63,7 +63,7 @@ def main(bit_config_key=None):
     logging.getLogger().addHandler(logging.StreamHandler())
     logging.info(args)
 
-    model = quantize_arch_dict[args.arch](model=None)
+    # model = quantize_arch_dict[args.arch](model=None)
 
     if args.resume:
         logging.info(f'Loading checkpoint: {args.resume}')
@@ -124,7 +124,7 @@ def main(bit_config_key=None):
         logging.error(f'Could not write training loss to {filename}')
 
     try:
-        filename = f'model_{args.arch}_acc_{best_acc1:.4}.json'
+        filename = f'model_acc.json'
         with open(os.path.join(save_path, filename), 'w') as fp:
             json.dump(acc_record, fp)
     except:
@@ -136,7 +136,6 @@ def main(bit_config_key=None):
         logging.info(f'arch: {args.arch}')
         logging.info(f'best-acc: {best_acc1}')
         logging.info(f'best-epoch: {best_epoch+1}/{args.epochs}')
-        logging.info(f'patience-readed: {patience_counter==patience}/{patience}')
         logging.info(f'resume: {args.resume}')
         logging.info(f'bit-config-key: {bit_config_key}')
         logging.info(f'bit-config: {bit_config}')
@@ -148,19 +147,15 @@ def main(bit_config_key=None):
     # filename = os.path.join(args.save_path, quant_scheme, 'best.txt')  # best accuracy stored in quant scheme directory 
     filename = os.path.join(args.save_path, f'{DATE_TIME}.txt')  # best accuracy stored in seperate file under checkpoints for this run 
     with open(filename, 'a+') as fp:
-        fp.write(f'{date_time}-{quant_scheme}: {best_acc1}\n')
+        fp.write(f'{quant_scheme}/{date_time}: {best_acc1}\n')
 
     reset_logging()
 
-# python train.py --arch hawq_jettagger --lr 0.001 --batch-size 1024 --save-path checkpoints/  --quant-mode symmetric --epochs 25
+# python train.py --arch hawq_jettagger --lr 0.0001 --batch-size 1024 --save-path checkpoints/  --quant-mode symmetric --epochs 25
 if __name__ == '__main__':
 
     bit_configs = [
-        'bit_config_hawq_jettagger_uniform6',
-        'bit_config_hawq_jettagger_uniform6',
-        'bit_config_hawq_jettagger_uniform6',
-        'bit_config_hawq_jettagger_uniform6',
-        'bit_config_hawq_jettagger_uniform6'
+        'bit_config_hawq_jettagger_uniform16'
     ]
 
     for config in bit_configs:

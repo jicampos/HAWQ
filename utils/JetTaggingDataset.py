@@ -69,7 +69,7 @@ class JetTaggingDataset(Dataset):
                 h5_dataset = np.array(h5_dataset, dtype=np.float)
                 # separate data from labels
                 np_data = h5_dataset[:, :54]
-                np_labels = h5_dataset[:,-5:]
+                np_labels = h5_dataset[:,-6:-1]
                 # update data and labels
                 data = np.concatenate((data, np_data), axis=0, dtype=np.float)
                 labels = np.concatenate((labels, np_labels), axis=0, dtype=np.float)

@@ -1,27 +1,65 @@
 bit_config_dict = {
 
-"bit_config_jettagger_uniform8" : {
+"bit_config_hawq_jettagger_fp32" : {
+    
+},
+
+"bit_config_hawq_jettagger_uniform3" : {
+    'quant_input': 16, 
+    'quant_act1': 3,
+    'quant_act2': 3,
+    'quant_act3': 3,
+
+    'fc1': 3,
+    'fc2': 3,
+    'fc3': 3,
+    'fc4': 3,
+
+    'fc1_bias': 3,
+    'fc2_bias': 3,
+    'fc3_bias': 3,
+    'fc4_bias': 3
 },
 
 "bit_config_hawq_jettagger_uniform4" : {
-    'quant_input': 4, 
+    'quant_input': 16, 
     'quant_act1': 4,
     'quant_act2': 4,
     'quant_act3': 4,
-    'quant_act4': 4,
 
     'fc1': 4,
     'fc2': 4,
     'fc3': 4,
-    'fc4': 4
+    'fc4': 4,
+
+    'fc1_bias': 4,
+    'fc2_bias': 4,
+    'fc3_bias': 4,
+    'fc4_bias': 4
+},
+
+"bit_config_hawq_jettagger_uniform5" : {
+    'quant_input': 5, 
+    'quant_act1': 5,
+    'quant_act2': 5,
+    'quant_act3': 5,
+
+    'fc1': 5,
+    'fc2': 5,
+    'fc3': 5,
+    'fc4': 5,
+
+    'fc1_bias': 5,
+    'fc2_bias': 5,
+    'fc3_bias': 5,
+    'fc4_bias': 5
 },
 
 "bit_config_hawq_jettagger_uniform6" : {
-    'quant_input': 6, 
+    'quant_input': 16, 
     'quant_act1': 6,
     'quant_act2': 6,
     'quant_act3': 6,
-    'quant_act4': 6,
 
     'fc1': 6,
     'fc2': 6,
@@ -34,25 +72,96 @@ bit_config_dict = {
     'fc4_bias': 6,
 },
 
+"bit_config_hawq_jettagger_uniform7" : {
+    'quant_input': 7, 
+    'quant_act1': 7,
+    'quant_act2': 7,
+    'quant_act3': 7,
+
+    'fc1': 7,
+    'fc2': 7,
+    'fc3': 7,
+    'fc4': 7, 
+    
+    'fc1_bias': 7,
+    'fc2_bias': 7,
+    'fc3_bias': 7,
+    'fc4_bias': 7
+},
+
 "bit_config_hawq_jettagger_uniform8" : {
-    'quant_input': 8, 
+    'quant_input': 16, 
     'quant_act1': 8,
     'quant_act2': 8,
     'quant_act3': 8,
-    'quant_act4': 8,
 
     'fc1': 8,
     'fc2': 8,
     'fc3': 8,
-    'fc4': 8
+    'fc4': 8, 
+    
+    'fc1_bias': 8,
+    'fc2_bias': 8,
+    'fc3_bias': 8,
+    'fc4_bias': 8
+},
+
+"bit_config_hawq_jettagger_uniform9" : {
+    'quant_input': 9, 
+    'quant_act1': 9,
+    'quant_act2': 9,
+    'quant_act3': 9,
+
+    'fc1': 9,
+    'fc2': 9,
+    'fc3': 9,
+    'fc4': 9,
+
+    'fc1_bias': 9,
+    'fc2_bias': 9,
+    'fc3_bias': 9,
+    'fc4_bias': 9
+},
+
+"bit_config_hawq_jettagger_uniform10" : {
+    'quant_input': 10, 
+    'quant_act1': 10,
+    'quant_act2': 10,
+    'quant_act3': 10,
+
+    'fc1': 10,
+    'fc2': 10,
+    'fc3': 10,
+    'fc4': 10,
+
+    'fc1_bias': 10,
+    'fc2_bias': 10,
+    'fc3_bias': 10,
+    'fc4_bias': 10
+},
+
+"bit_config_hawq_jettagger_uniform11" : {
+    'quant_input': 11, 
+    'quant_act1': 11,
+    'quant_act2': 11,
+    'quant_act3': 11,
+
+    'fc1': 11,
+    'fc2': 11,
+    'fc3': 11,
+    'fc4': 11,
+
+    'fc1_bias': 11,
+    'fc2_bias': 11,
+    'fc3_bias': 11,
+    'fc4_bias': 11
 },
 
 "bit_config_hawq_jettagger_uniform12" : {
-    'quant_input': 12, 
+    'quant_input': 16, 
     'quant_act1': 12,
     'quant_act2': 12,
     'quant_act3': 12,
-    'quant_act4': 12,
 
     'fc1': 12,
     'fc2': 12,
@@ -70,7 +179,6 @@ bit_config_dict = {
     'quant_act1': 12,
     'quant_act2': 12,
     'quant_act3': 12,
-    'quant_act4': 12,
 
     'fc1': 12,
     'fc2': 12,
@@ -88,7 +196,6 @@ bit_config_dict = {
     'quant_act1': 16,
     'quant_act2': 16,
     'quant_act3': 16,
-    'quant_act4': 16,
 
     'fc1': 16,
     'fc2': 16,
@@ -106,7 +213,6 @@ bit_config_dict = {
     'quant_act1': 24,
     'quant_act2': 24,
     'quant_act3': 24,
-    'quant_act4': 24,
 
     'fc1': 24,
     'fc2': 24,
@@ -124,13 +230,156 @@ bit_config_dict = {
     'quant_act1': 30,
     'quant_act2': 30,
     'quant_act3': 30,
-    'quant_act4': 30,
 
     'fc1': 30,
     'fc2': 30,
     'fc3': 30,
     'fc4': 30
 },
+
+"bit_config_hawq_jettagger_uniform32" : {
+    'quant_input': 16, 
+    'quant_act1': 32,
+    'quant_act2': 32,
+    'quant_act3': 32,
+
+    'fc1': 32,
+    'fc2': 32,
+    'fc3': 32,
+    'fc4': 32,
+
+    'fc1_bias': 32,
+    'fc2_bias': 32,
+    'fc3_bias': 32,
+    'fc4_bias': 32
+},
+
+
+"bit_config_hawq_jettagger_w4b11a4" : {
+    'quant_input': 4, 
+    'quant_act1': 4,
+    'quant_act2': 4,
+    'quant_act3': 4,
+
+    'fc1': 4,
+    'fc2': 4,
+    'fc3': 4,
+    'fc4': 4,
+
+    'fc1_bias': 11,
+    'fc2_bias': 11,
+    'fc3_bias': 11,
+    'fc4_bias': 11
+},
+
+
+"bit_config_hawq_jettagger_w5b11a5" : {
+    'quant_input': 5, 
+    'quant_act1': 5,
+    'quant_act2': 5,
+    'quant_act3': 5,
+
+    'fc1': 5,
+    'fc2': 5,
+    'fc3': 5,
+    'fc4': 5,
+
+    'fc1_bias': 11,
+    'fc2_bias': 11,
+    'fc3_bias': 11,
+    'fc4_bias': 11
+},
+
+
+"bit_config_hawq_jettagger_w6b11a6" : {
+    'quant_input': 6, 
+    'quant_act1': 6,
+    'quant_act2': 6,
+    'quant_act3': 6,
+
+    'fc1': 6,
+    'fc2': 6,
+    'fc3': 6,
+    'fc4': 6,
+
+    'fc1_bias': 11,
+    'fc2_bias': 11,
+    'fc3_bias': 11,
+    'fc4_bias': 11
+},
+
+
+"bit_config_hawq_jettagger_w7b11a7" : {
+    'quant_input': 7, 
+    'quant_act1': 7,
+    'quant_act2': 7,
+    'quant_act3': 7,
+
+    'fc1': 7,
+    'fc2': 7,
+    'fc3': 7,
+    'fc4': 7,
+
+    'fc1_bias': 11,
+    'fc2_bias': 11,
+    'fc3_bias': 11,
+    'fc4_bias': 11
+},
+
+
+"bit_config_hawq_jettagger_w8b11a8" : {
+    'quant_input': 8, 
+    'quant_act1': 8,
+    'quant_act2': 8,
+    'quant_act3': 8,
+
+    'fc1': 8,
+    'fc2': 8,
+    'fc3': 8,
+    'fc4': 8,
+
+    'fc1_bias': 11,
+    'fc2_bias': 11,
+    'fc3_bias': 11,
+    'fc4_bias': 11
+},
+
+
+"bit_config_hawq_jettagger_w9b11a9" : {
+    'quant_input': 9, 
+    'quant_act1': 9,
+    'quant_act2': 9,
+    'quant_act3': 9,
+
+    'fc1': 9,
+    'fc2': 9,
+    'fc3': 9,
+    'fc4': 9,
+
+    'fc1_bias': 11,
+    'fc2_bias': 11,
+    'fc3_bias': 11,
+    'fc4_bias': 11
+},
+
+
+"bit_config_hawq_jettagger_w10b11a10" : {
+    'quant_input': 10, 
+    'quant_act1': 10,
+    'quant_act2': 10,
+    'quant_act3': 10,
+
+    'fc1': 10,
+    'fc2': 10,
+    'fc3': 10,
+    'fc4': 10,
+
+    'fc1_bias': 11,
+    'fc2_bias': 11,
+    'fc3_bias': 11,
+    'fc4_bias': 11
+},
+
 
 "bit_config_resnet18_uniform8" : {
 'quant_input': 8,

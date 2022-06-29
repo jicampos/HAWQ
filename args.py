@@ -11,11 +11,11 @@ parser.add_argument('--teacher-arch',
                     help='teacher network used to do distillation')
 parser.add_argument('-j', '--workers', default=4, type=int, metavar='N',
                     help='number of data loading workers (default: 4)')
-parser.add_argument('--epochs', default=10, type=int, metavar='N',
+parser.add_argument('--epochs', default=50, type=int, metavar='N',
                     help='number of total epochs to run')
 parser.add_argument('--start-epoch', default=0, type=int, metavar='N',
                     help='manual epoch number (useful on restarts)')
-parser.add_argument('-b', '--batch-size', default=1, type=int,
+parser.add_argument('-b', '--batch-size', default=1024, type=int,
                     metavar='N',
                     help='mini-batch size (default: 256), this is the total '
                          'batch size of all GPUs on the current node when '
@@ -131,6 +131,29 @@ parser.add_argument('--bit-configs',
                     action='store_true',
                     help='if True train intialize the model with the bit configurations '
                          'set in a predefined set')
-
+# plot_train.py
+parser.add_argument('--file', type=str, default='checkpoints/06152022_123620.txt')
+parser.add_argument('--plot-type', type=str, default='acc')
+parser.add_argument('--plot-log', action='store_true')
+parser.add_argument('--integer', type=bool, default=True)
+# train.py
+parser.add_argument('--batch-norm', action='store_true')
+parser.add_argument('--silu', action='store_true')
+parser.add_argument('--gelu', action='store_true')
+parser.add_argument('--train-scheme', 
+                    type=str, 
+                    choices=['direct', 'gradual', 'random'], 
+                    default='direct')
+parser.add_argument('--teacher-quant-scheme',
+                    type=str,
+                    default='uniform12',
+                    help='quant scheme for teacher network used to do distillation')
+parser.add_argument('--teacher-tag',
+                    type=str,
+                    help='tag used to load checkpoint to do distillation')
+# export.py
+parser.add_argument('--load', type=str)
+parser.add_argument('--dense-out', action='store_true')
+parser.add_argument('--quant-out', action='store_true')
 args = parser.parse_args()
 args.distributed = args.world_size > 1 or args.multiprocessing_distributed

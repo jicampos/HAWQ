@@ -54,12 +54,8 @@ class QuantLinear(Module):
 
     def __repr__(self):
         s = super(QuantLinear, self).__repr__()
-        if self.bias_bit is None:
-            s = "(" + s + " weight_bit={}, full_precision_flag={}, quantize_fn={})".format(
+        s = "(" + s + " weight_bit={}, full_precision_flag={}, quantize_fn={})".format(
             self.weight_bit, self.full_precision_flag, self.quant_mode)
-        else:
-            s = "(" + s + " weight_bit={}, bias_bit={}, full_precision_flag={}, quantize_fn={})".format(
-            self.weight_bit, self.bias_bit, self.full_precision_flag, self.quant_mode)
         return s
 
     def set_param(self, linear):
@@ -130,8 +126,8 @@ class QuantLinear(Module):
         x_int = x / prev_act_scaling_factor
         correct_output_scale = bias_scaling_factor[0].view(1, -1)
 
-        return (ste_round.apply(
-            F.linear(x_int, weight=self.weight_integer, bias=self.bias_integer)) * correct_output_scale, self.fc_scaling_factor)
+        return ste_round.apply(
+            F.linear(x_int, weight=self.weight_integer, bias=self.bias_integer)) * correct_output_scale
 
 
 class QuantAct(Module):

@@ -1,26 +1,26 @@
-"""
-    Exporting HAWQ models to the ONNX format.
-"""
-import os
-import sys
+import copy
 import logging
-import argparse
 import warnings
 
-import onnx
-import onnxoptimizer
-import qonnx
-
 import torch
-import torch.autograd
-from torch.onnx import register_custom_op_symbolic
+import torch.nn as nn
 from torch._C import ListType, OptionalType
 
-from utils import q_jettagger_model, q_resnet18, q_mnist
-from utils.quantization_utils.quant_modules import QuantAct, QuantDropout, QuantLinear, QuantBnConv2d
-from utils.quantization_utils.quant_modules import QuantMaxPool2d, QuantAveragePool2d, QuantConv2d
+import onnx 
+import qonnx
+import onnxoptimizer
 
-from args import *
+from .function import *
+from ..quantization_utils.quant_modules import QuantAct, QuantDropout, QuantLinear, QuantBnConv2d
+from ..quantization_utils.quant_modules import QuantMaxPool2d, QuantAveragePool2d, QuantConv2d
+
+EXPORT_LAYERS = (
+    QuantAct,
+    QuantLinear,
+    QuantConv2d,
+    QuantAveragePool2d,
+    QuantBnConv2d
+)
 
 SUPPORTED_LAYERS = (
     QuantAct,
@@ -30,10 +30,6 @@ SUPPORTED_LAYERS = (
     QuantAveragePool2d, 
     QuantDropout,
     QuantBnConv2d
-)
-
-UNSUPPORTED_LAYERS = (
-
 )
 
 model_info = {}
@@ -46,102 +42,9 @@ model_info['act_scaling_factor'] = dict()
 model_info['conv_scaling_factor'] = dict()
 model_info['convbn_scaling_factor'] = dict()
 
-SUPPORTED_QONNX_OPS = ['Quant', 'Trunc']
-UNSUPPORTED_QONNX_OPS = ['BipolarQuant']
-
-DOMAIN_STRING = 'hawq2qonnx'
 
 # ------------------------------------------------------------
-class QuantFunc(torch.autograd.Function):
-    name = 'Quant'
-
-    @staticmethod
-    def forward(ctx, x, scale, zero_point, bit_width, signed, narrow_range, rounding_mode):
-        min_ = -1*(2**bit_width)
-        max_ = (2**bit_width)-1
-        return torch.clamp(torch.round((x/scale)+zero_point), min_, max_)
-
-    @staticmethod
-    def symbolic(g, x, scale, zero_point, bit_width, signed, narrow_range, rounding_mode):
-        return g.op(f'{DOMAIN_STRING}::Quant', 
-                x, scale, zero_point, bit_width,  
-                signed_i=int(signed),
-                narrow_i=int(narrow_range),
-                rounding_mode_s=rounding_mode
-        )
-
-class BinaryQuantFunc(torch.autograd.Function):
-    name = 'BipolarQuant'
-
-    @staticmethod
-    def forward(ctx, x, scale, zero_point, bit_width, signed, narrow_range, rounding_mode):
-        return x
-
-    @staticmethod
-    def symbolic(g, x, scale, zero_point, bit_width, signed, narrow_range, rounding_mode):
-        return g.op(f'{DOMAIN_STRING}::BipolarQuant', x, scale)
-
-class TruncFunc(torch.autograd.Function):
-    name = 'Trunc'
-
-    @staticmethod
-    def forward(ctx, x, scale, zero_point, input_bit_width, output_bit_width, rounding_mode):
-        return torch.trunc(x)
-
-    @staticmethod
-    def symbolic(g, x, scale, zero_point, input_bit_width, output_bit_width, rounding_mode):
-        return g.op(f'{DOMAIN_STRING}::Trunc',
-                    x, scale, zero_point, input_bit_width, output_bit_width,
-                    rounding_mode_s=rounding_mode)
-
-class ConvFunc(torch.autograd.Function):
-    name = 'Conv'
-
-    @staticmethod
-    def forward(ctx, x, quant_input, layer, dilations, group, kernel_shape, pads, strides):
-        return layer.conv(x)
-
-    @staticmethod
-    def symbolic(g, x, quant_input, layer, dilations, group, kernel_shape, pads, strides):
-        return g.op(f'{DOMAIN_STRING}::Conv', x, quant_input, 
-                        dilations_i=dilations, group_i=group, kernel_shape_i=kernel_shape, pads_i=pads, strides_i=strides)
-
-class RoundFunc(torch.autograd.Function):
-    name = 'Round'
-
-    @staticmethod
-    def forward(ctx, x):
-        return torch.round(x)
-    
-    @staticmethod
-    def symbolic(g, x):
-        return g.op(f'{DOMAIN_STRING}::Round', x)
-
-
-HAWQ_FUNCS = [
-    BinaryQuantFunc, 
-    QuantFunc, 
-    TruncFunc,
-    RoundFunc,
-    ConvFunc
-]
-
-def get_quant_func(bit_width):
-    if bit_width == 1:
-        return BinaryQuantFunc
-    return QuantFunc
-
-
-# ------------------------------------------------------------
-class ExportONNXLayer(torch.nn.Module):
-    def __init__(self) -> None:
-        super().__init__()
-
-    def update_args(self):
-        ...
-
-# ------------------------------------------------------------
-class ExportONNXQuantAct(torch.nn.Module):
+class ExportONNXQuantAct(nn.Module):
     def __init__(self, layer) -> None:
         super().__init__()
 
@@ -152,12 +55,12 @@ class ExportONNXQuantAct(torch.nn.Module):
         self.scale = layer.act_scaling_factor.clone().detach().requires_grad_(False)
 
         if layer.full_precision_flag:
-            self.bit_width = torch.tensor(32)
+            self.bit_width = 32
         else:
-            self.bit_width = torch.tensor(layer.activation_bit)
+            self.bit_width = layer.activation_bit
 
         self.args = (
-            torch.tensor(layer.act_scaling_factor.detach().item(), dtype=torch.float32),  # scale
+            torch.tensor(layer.act_scaling_factor.clone().detach().item(), dtype=torch.float32),  # scale
             torch.tensor(0, dtype=torch.float32),                                         # zero point
             torch.tensor(self.bit_width, dtype=torch.float32),                            # bit width
             int(1 if layer.quant_mode == 'symmetric' else 0),                             # signed
@@ -177,11 +80,12 @@ class ExportONNXQuantAct(torch.nn.Module):
 
         if self.export_mode:
             QuantFunc = get_quant_func(self.bit_width)
-            x = QuantFunc.apply(x, *self.args)*self.scale
+            x = QuantFunc.apply(x, *self.args)
             model_info['quant_out_export_mode'][self.layer] = x
             return (x, model_info['act_scaling_factor'][self.layer])
         else:
-            x, act_scaling_factor = self.layer(x, pre_act_scaling_factor, pre_weight_scaling_factor,
+            with torch.no_grad():
+                x, act_scaling_factor = self.layer(x, pre_act_scaling_factor, pre_weight_scaling_factor,
                                                          identity, identity_scaling_factor, identity_weight_scaling_factor)
             model_info['act_scaling_factor'][self.layer] = act_scaling_factor
             model_info['quant_out'][self.layer] = x
@@ -189,7 +93,7 @@ class ExportONNXQuantAct(torch.nn.Module):
 
 
 # ------------------------------------------------------------
-class ExportONNXQuantLinear(torch.nn.Module):
+class ExportONNXQuantLinear(nn.Module):
     def __init__(self, layer) -> None:
         super().__init__()
 
@@ -239,26 +143,27 @@ class ExportONNXQuantLinear(torch.nn.Module):
             QuantFunc = get_quant_func(self.layer.weight_bit)
             weights = QuantFunc.apply(self.fc.weight.data, *self.weight_args, *self.kwargs)
 
-            x = x / prev_act_scaling_factor.view(1,-1)[0].detach()
+            # x = x / prev_act_scaling_factor.view(1,-1)[0].clone().detach().requires_grad_(False)
             x = torch.matmul(x, weights)
 
             if self.has_bias:
                 QuantFunc = get_quant_func(self.layer.bias_bit)
                 bias =  QuantFunc.apply(self.fc.bias.data, *self.bias_args, *self.kwargs)
                 x = torch.add(x, bias)
-            x = torch.round(x)
-            bias_scaling_factor = self.scale * prev_act_scaling_factor.detach()
+            # x = torch.round(x)
+            bias_scaling_factor = self.scale * prev_act_scaling_factor.clone().detach().requires_grad_(False)
             x = x * bias_scaling_factor
-            model_info['dense_out_export_mode'][self.layer] = x
+            model_info['dense_out_export_mode'][self.layer] = x.clone().detach().requires_grad_(False)
             return x
         else:
-            x = self.layer(x, prev_act_scaling_factor)
-            model_info['dense_out'][self.layer] = x
+            with torch.no_grad():
+                x = self.layer(x, prev_act_scaling_factor)
+            model_info['dense_out'][self.layer] = x.clone().detach().requires_grad_(False)
             return x
 
 
 # ------------------------------------------------------------
-class ExportONNXQuantConv2d(torch.nn.Module):
+class ExportONNXQuantConv2d(nn.Module):
     def __init__(self, layer) -> None:
         super().__init__()
 
@@ -322,7 +227,7 @@ class ExportONNXQuantConv2d(torch.nn.Module):
 
 
 # ------------------------------------------------------------
-class ExportONNXQuantAveragePool2d(torch.nn.Module):
+class ExportONNXQuantAveragePool2d(nn.Module):
     def __init__(self, layer) -> None:
         super().__init__()
         
@@ -365,7 +270,7 @@ class ExportONNXQuantAveragePool2d(torch.nn.Module):
 
 
 # ------------------------------------------------------------
-class ExportONNXQuantBnConv2d(torch.nn.Module):
+class ExportONNXQuantBnConv2d(nn.Module):
     def __init__(self, layer) -> None:
         super().__init__()
 
@@ -398,7 +303,6 @@ class ExportONNXQuantBnConv2d(torch.nn.Module):
 
         if self.export_mode:
             x, conv_scaling_factor = self.export_quant_conv(x)
-            print(self.bn)
             return (self.bn(x), conv_scaling_factor)
         else:
             x, convbn_scaling_factor = self.layer(x, pre_act_scaling_factor)
@@ -406,134 +310,126 @@ class ExportONNXQuantBnConv2d(torch.nn.Module):
             return self.export_quant_conv(x, convbn_scaling_factor)
 
 
-# ------------------helper functions------------------ 
 SET_EXPORT_MODE = (ExportONNXQuantAct, ExportONNXQuantLinear, ExportONNXQuantConv2d, ExportONNXQuantAveragePool2d, ExportONNXQuantBnConv2d)
 
-def enable_export(module):
-    if isinstance(module, SET_EXPORT_MODE):
-        module.export_mode = True
 
-def disable_export(module):
-    if isinstance(module, SET_EXPORT_MODE):
-        module.export_mode = False 
+export_layers_dict = {
+    'QuantAct': ExportONNXQuantAct,
+    'QuantLinear': ExportONNXQuantLinear,
+    'QuantConv2d': ExportONNXQuantConv2d,
+    'QuantAveragePool2d': ExportONNXQuantAveragePool2d,
+    'QuantBnConv2d': QuantBnConv2d
+}
 
-def set_export_mode(module, export_mode):
-    if export_mode == 'enable':
-        module.apply(enable_export)
-    else:
-        module.apply(disable_export)
-
-EXPORT_LAYERS = (
-    QuantAct,
-    QuantLinear,
-    QuantConv2d,
-    QuantAveragePool2d,
-    QuantBnConv2d
-)
-
-def replace_layers(model):
-    # use dictionary to map HAWQ layers to their Export counter part  
-    for param in model.parameters():
-        param.requires_grad_(False)
-
-    for name in dir(model):
-        layer = getattr(model, name)
-        onnx_export_layer = None
-        if isinstance(layer, QuantAct):
-            onnx_export_layer = ExportONNXQuantAct(layer)
-            setattr(model, name, onnx_export_layer)
-        elif isinstance(layer, QuantLinear):
-            onnx_export_layer = ExportONNXQuantLinear(layer)
-            setattr(model, name, onnx_export_layer)
-        elif isinstance(layer, QuantConv2d):
-            onnx_export_layer = ExportONNXQuantConv2d(layer)
-            setattr(model, name, onnx_export_layer)
-        elif isinstance(layer, QuantBnConv2d):
-            onnx_export_layer = ExportONNXQuantBnConv2d(layer)
-            setattr(model, name, onnx_export_layer)
-        elif isinstance(layer, QuantAveragePool2d):
-            onnx_export_layer = ExportONNXQuantAveragePool2d(layer)
-            setattr(model, name, onnx_export_layer)
-        elif isinstance(layer, torch.nn.Sequential):
-            # no nn.ModuleList?
-            replace_layers(layer)
-        elif isinstance(layer, UNSUPPORTED_LAYERS):
-            raise RuntimeError(f'Unsupported layer type found {layer._get_name()}')
-        # track changes 
-        if onnx_export_layer is not None:
-            model_info['transformed'][layer] = onnx_export_layer
-
-def register_custom_ops():
-    for func in HAWQ_FUNCS:
-        register_custom_op_symbolic(f'{DOMAIN_STRING}::{func.name}', func.symbolic, 1)
-
-def optimize_onnx_model(model_path):
-    onnx_model = onnxoptimizer.optimize(onnx.load_model(model_path), passes=['extract_constant_to_initializer'])
-    from qonnx.util.cleanup import cleanup
-    cleanup(onnx_model, out_file=model_path)
-
-def export_to_qonnx(model, input_tensor, filename=None, save=True):
-    assert model is not None, 'Model cannot be None'
-    assert input_tensor is not None, 'Model input cannot be None'
-
-    if filename is None:
-        from datetime import datetime
-        now = datetime.now() # current date and time
-        date_time = now.strftime('%m%d%Y_%H%M%S')
-        filename = f'results/{model._get_name()}_{date_time}.onnx'
-
-    register_custom_ops()
-    import copy 
-    export_model = copy.deepcopy(model)
-
-    with torch.no_grad():
-        with warnings.catch_warnings():
-            warnings.simplefilter('ignore')
-            replace_layers(export_model)
-            # first pass (collect scaling factors for onnx nodes) 
-            set_export_mode(export_model, 'disable')
-            x = export_model(input_tensor)
-            # export with collected values 
-            set_export_mode(export_model, 'enable')
-            if save:
-                print('Exporting model...')
-                torch.onnx.export(
-                                model=export_model, 
-                                args=input_tensor, 
-                                f=filename, 
-                                opset_version=11,
-                                operator_export_type=torch.onnx.OperatorExportTypes.ONNX,
-                                custom_opsets={DOMAIN_STRING: 1}
-                )
-                optimize_onnx_model(filename)
-    return export_model
-
-
-# python export.py --arch hawq_jettagger --load uniform6/06252022_152008
 # ------------------------------------------------------------
-if __name__ == '__main__':
+class ExportManager(nn.Module):
+    def __init__(self, model) -> None:
+        super().__init__()
+        assert model is not None, 'Model cannot be None'
+        self.model_info = {}
+        self.model_info['transformed'] = {}
 
-    print(f'Loading {args.arch}...\n')
+        self.export_model = copy.deepcopy(model)
+        self.replace_layers()
 
-    if args.arch == 'hawq_jettagger':
-        filename = 'hawq2qonnx_jet.onnx'
-        x = torch.randn([1, 16])
-        model = q_jettagger_model(model=None, dense_out=args.dense_out, quant_out=args.quant_out,
-                                        batchnorm=args.batch_norm, silu=args.silu, gelu=args.gelu)
-    elif args.arch == 'hawq_mnist':
-        filename = 'hawq2qonnx_conv.onnx'
-        x = torch.randn([1, 1, 28, 28])
-        model = q_mnist()
+    def forward(self, x):
+        self.set_export_mode('enable')
+        x = self.export_model(x)
+        self.set_export_mode('disable')
+        return x
 
-    print('Original layers:')
-    print('-----------------------------------------------------------------------------')
-    print(model)
-    print('-----------------------------------------------------------------------------')
+    # def replace_layers(self):
+    #     for param in self.export_model.parameters():
+    #         param.requires_grad_(False)
 
-    if args.load:
-        quant_scheme, date_tag = args.load.split('/')
-        filename = f'fixed_hawq2qonnx_jet_{quant_scheme}_{date_tag}.onnx'
-        from train_utils import load_checkpoint
-        load_checkpoint(model, f'checkpoints/{args.load}/model_best.pth.tar', args)
+    #     for name in dir(self.export_model):
+    #         layer = getattr(self.export_model, name)
+    #         onnx_export_layer = None
+    #         if isinstance(layer, nn.Module) and layer.__class__.__name__ in EXPORT_LAYERS:
+    #             onnx_export_layer = export_layers_dict[layer.__class__.__name__]()
+    #             print(layer.__class__.__name__)
+    #             setattr(self.export_model, name, onnx_export_layer)
+    #         # track changes 
+    #         if onnx_export_layer is not None:
+    #             self.model_info['transformed'][layer] = onnx_export_layer
 
-    export_model = export_to_qonnx(model, x, filename=filename, save=True)
+    def replace_layers(self):
+        for param in self.export_model.parameters():
+            param.requires_grad_(False)
+
+        for name in dir(self.export_model):
+            layer = getattr(self.export_model, name)
+            onnx_export_layer = None
+            if isinstance(layer, QuantAct):
+                onnx_export_layer = ExportONNXQuantAct(layer)
+                setattr(self.export_model, name, onnx_export_layer)
+            elif isinstance(layer, QuantLinear):
+                onnx_export_layer = ExportONNXQuantLinear(layer)
+                setattr(self.export_model, name, onnx_export_layer)
+            elif isinstance(layer, QuantConv2d):
+                onnx_export_layer = ExportONNXQuantConv2d(layer)
+                setattr(self.export_model, name, onnx_export_layer)
+            elif isinstance(layer, QuantBnConv2d):
+                onnx_export_layer = ExportONNXQuantBnConv2d(layer)
+                setattr(self.export_model, name, onnx_export_layer)
+            elif isinstance(layer, QuantAveragePool2d):
+                onnx_export_layer = ExportONNXQuantAveragePool2d(layer)
+                setattr(self.export_model, name, onnx_export_layer)
+            elif isinstance(layer, torch.nn.Sequential):
+                # no nn.ModuleList?
+                replace_layers(layer)
+            # track changes 
+            if onnx_export_layer is not None:
+                self.model_info['transformed'][layer] = onnx_export_layer
+
+    @staticmethod
+    def enable_export(module):
+        if isinstance(module, SET_EXPORT_MODE):
+            module.export_mode = True
+
+    @staticmethod
+    def disable_export(module):
+        if isinstance(module, SET_EXPORT_MODE):
+            module.export_mode = False 
+
+    def set_export_mode(self, export_mode):
+        if export_mode == 'enable':
+            self.export_model.apply(self.enable_export)
+        else:
+            self.export_model.apply(self.disable_export)
+    
+    def optimize_onnx_model(self, model_path):
+        onnx_model = onnxoptimizer.optimize(onnx.load_model(model_path), passes=['extract_constant_to_initializer'])
+        from qonnx.util.cleanup import cleanup
+        cleanup(onnx_model, out_file=model_path)
+
+    def export(self, input_tensor, filename=None, save=True):
+        assert input_tensor is not None, 'Model input cannot be None'
+
+        if filename is None:
+            from datetime import datetime
+            now = datetime.now() # current date and time
+            date_time = now.strftime('%m%d%Y_%H%M%S')
+            filename = f'results/{model._get_name()}_{date_time}.onnx'
+
+        register_custom_ops()
+
+        with torch.no_grad():
+            with warnings.catch_warnings():
+                warnings.simplefilter('ignore')
+                # first pass (collect scaling factors for onnx nodes) 
+                self.set_export_mode('disable')
+                x = self.export_model(input_tensor)
+                # export with collected values 
+                self.set_export_mode('enable')
+                if save:
+                    print('Exporting model...')
+                    torch.onnx.export(
+                                    model=self.export_model, 
+                                    args=input_tensor, 
+                                    f=filename, 
+                                    opset_version=11,
+                                    operator_export_type=torch.onnx.OperatorExportTypes.ONNX,
+                                    custom_opsets={DOMAIN_STRING: 1}
+                    )
+                    self.optimize_onnx_model(filename)

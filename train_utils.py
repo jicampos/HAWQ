@@ -115,7 +115,7 @@ def domain_discrepancy(source_feat, target_feat, loss_type='kl'):
         for target, source in zip(target_feat, source_feat):
             difference = target.detach().reshape(-1,1)-source.detach().reshape(-1, 1)
             discrep_loss += torch.norm(difference)
-    return discrep_loss
+    return discrep_loss * (1-args.distill_alpha)
 
 def loss_kd(output, target, teacher_output, args):
     """
@@ -127,22 +127,20 @@ def loss_kd(output, target, teacher_output, args):
     alpha = args.distill_alpha
     T = args.temperature
     criterion = nn.BCELoss()
-    KD_loss = F.kl_div(F.log_softmax(output / T, dim=1), F.softmax(teacher_output / T, dim=1)) * (alpha * T * T) + \
+    KD_loss = F.kl_div(F.log_softmax(output / T, dim=1), F.softmax(teacher_output / T, dim=1), reduction='batchmean') * (alpha * T * T) + \
              criterion(output, target.float()) * (1. - alpha)
 
     return KD_loss
 
 # ------------------------------------------------------------
-def train(train_loader, model, criterion, optimizer, epoch, args, teacher_model=None):
+def train(train_loader, model, criterion, optimizer, epoch, args, teacher=None):
     batch_time = AverageMeter('Time', ':6.3f')
     data_time = AverageMeter('Data', ':6.3f')
     losses = AverageMeter('Loss', ':.4e')
     top1 = AverageMeter('Acc@1', ':6.2f')
-    top5 = AverageMeter('Acc@5', ':6.2f')
-    disc_losses = []
     progress = ProgressMeter(
         len(train_loader),
-        [batch_time, data_time, losses, top1, top5],
+        [batch_time, data_time, losses, top1],
         prefix="Epoch: [{}]".format(epoch))
 
     # switch to train mode
@@ -150,34 +148,37 @@ def train(train_loader, model, criterion, optimizer, epoch, args, teacher_model=
         model.eval()
     else:
         model.train()
-
+    lossdc = 0
     end = time.time()
     for i, (images, target) in enumerate(train_loader):
         # measure data loading time
         data_time.update(time.time() - end)
 
-        # if args.gpu is not None:
-        #     images = images.cuda(args.gpu, non_blocking=True)
-        # target = target.cuda(args.gpu, non_blocking=True)
-
+        # compute output
         output = model(images.float())
 
-        # compute output
-        if teacher_model:
-            output, target_feat = model(images.float())
-        loss = criterion(output, target.float())
-            
-        # measure accuracy and record loss
-        # acc1, acc5 = accuracy(output, target.float(), topk=(1, 5))
-        losses.update(loss.item(), images.size(0))
-        # top1.update(acc1[0], images.size(0))
-        # top5.update(acc5[0], images.size(0))
+        if args.dc:
+            output, output_feats = output[0], output[1]
+            _, teach_feats = teacher(images.float())
+            lossdc = domain_discrepancy(output_feats, teach_feats, loss_type='kl')
 
-        if teacher_model:
-            output, teacher_feats = teacher_model(images.float())
-            discrep_loss = 0.001*domain_discrepancy(teacher_feats, target_feat, 'kl')
-            disc_losses.append(discrep_loss)
-            loss += discrep_loss
+        if args.distill_method == 'None':
+            loss = criterion(output, target.float()) + lossdc
+        elif args.distill_method == 'KD_naive':
+            teacher_output = teacher(images.float())
+            loss = loss_kd(output, target.float(), teacher_output, args) + lossdc
+        else:
+            raise Exception(f'Distill Method {args.distill_method} is not implemented')
+
+        # measure accuracy and record loss
+        losses.update(loss.item(), images.size(0))
+
+        _, preds = torch.max(output, 1)
+        tmp_pred = preds.view(-1).cpu()
+        tmp_lbl = torch.max(target, 1)[1].view(-1).cpu()
+        accuracy_value = accuracy_score(np.nan_to_num(tmp_lbl.numpy()), np.nan_to_num(tmp_pred.numpy()))
+        # update progress meter 
+        top1.update(accuracy_value, images.size(0))
 
         # compute gradient and do SGD step
         optimizer.zero_grad()
@@ -191,62 +192,57 @@ def train(train_loader, model, criterion, optimizer, epoch, args, teacher_model=
         if i % args.print_freq == 0:
             progress.display(i)
     
-    return losses.avg, np.mean(disc_losses)
+    return losses.avg
 
 def validate(val_loader, model, criterion, args):
     batch_time = AverageMeter('Time', ':6.3f')
     losses = AverageMeter('Loss', ':.4e')
     top1 = AverageMeter('Acc@1', ':6.2f')
-    top5 = AverageMeter('Acc@5', ':6.2f')
     progress = ProgressMeter(
         len(val_loader),
-        [batch_time, losses, top1, top5],
+        [batch_time, losses, top1],
         prefix='Test: ')
 
     # switch to evaluate mode
     freeze_model(model)
     model.eval()
-
     predlist = torch.zeros(0, dtype=torch.long, device='cpu')
     lbllist = torch.zeros(0, dtype=torch.long, device='cpu')
 
     with torch.no_grad():
         end = time.time()
         for i, (images, target) in enumerate(val_loader):
-            # if args.gpu is not None:
-            #     images = images.cuda(args.gpu, non_blocking=True)
-            # target = target.cuda(args.gpu, non_blocking=True)
-
-            output = model(images.float())
             # compute output
-            if args.teacher_arch != 'resnet101':
-                output, _ = model(images.float())
-            loss = criterion(output, target.float())
+            output = model(images.float())
 
+            if args.dc:
+                output, _ = output[0], output[1]
+
+            loss = criterion(output, target.float())
+            
             # measure accuracy and record loss
-            # acc1, acc5 = accuracy(output, target.float(), topk=(1, 5))
             losses.update(loss.item(), images.size(0))
-            # top1.update(acc1[0], images.size(0))
-            # top5.update(acc5[0], images.size(0))
 
             _, preds = torch.max(output, 1)
+            tmp_pred = preds.view(-1).cpu()
+            tmp_lbl = torch.max(target, 1)[1].view(-1).cpu()
+            accuracy_value = accuracy_score(np.nan_to_num(tmp_lbl.numpy()), np.nan_to_num(tmp_pred.numpy()))
+            # update progress meter 
+            top1.update(accuracy_value, images.size(0))
+
             predlist = torch.cat([predlist, preds.view(-1).cpu()])
             lbllist = torch.cat([lbllist, torch.max(target, 1)[1].view(-1).cpu()])
-
+            
             # measure elapsed time
             batch_time.update(time.time() - end)
             end = time.time()
 
             if i % args.print_freq == 0:
                 progress.display(i)
-        
-        outputs = output.cpu()
-        local_labels = target.cpu()
-        predict_test = outputs.numpy()
+
         accuracy_value = accuracy_score(np.nan_to_num(lbllist.numpy()), np.nan_to_num(predlist.numpy()))
         top1.update(accuracy_value, 1)
-
-        logging.info(' * Acc@1 {top1.avg:.3f} Acc@5 {top5.avg:.3f}'.format(top1=top1, top5=top5))
+        logging.info(' * Acc@1 {top1.avg:.3f}'.format(top1=top1))
 
     torch.save({'convbn_scaling_factor': {k: v for k, v in model.state_dict().items() if 'convbn_scaling_factor' in k},
                 'fc_scaling_factor': {k: v for k, v in model.state_dict().items() if 'fc_scaling_factor' in k},
@@ -313,20 +309,3 @@ def adjust_learning_rate(optimizer, epoch, args):
     print('lr = ', lr)
     for param_group in optimizer.param_groups:
         param_group['lr'] = lr
-
-
-def accuracy(output, target, topk=(1,)):
-    """Computes the accuracy over the k top predictions for the specified values of k"""
-    with torch.no_grad():
-        maxk = max(topk)
-        batch_size = target.size(0)
-
-        _, pred = output.topk(maxk, 1, True, True)
-        pred = pred.t()
-        correct = pred.eq(target.view(1, -1).expand_as(pred))
-
-        res = []
-        for k in topk:
-            correct_k = correct[:k].reshape(-1).float().sum(0, keepdim=True)
-            res.append(correct_k.mul_(100.0 / batch_size))
-        return res

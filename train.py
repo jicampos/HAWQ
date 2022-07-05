@@ -17,22 +17,11 @@ from train_utils import *
 quantize_arch_dict = {'jettagger': utils.models.q_jettagger.jettagger_model,
                       'hawq_jettagger': utils.models.q_jettagger.q_jettagger_model}
 
-train_loader = utils.getTrainData(dataset='hlc_jets',
-                                    batch_size=args.batch_size,
-                                    path='/data1/jcampos/HAWQ-main/data/train',
-                                    for_inception=False,
-                                    data_percentage=1)
-val_loader = utils.getTestData(dataset='hlc_jets',
-                                    batch_size=args.batch_size,
-                                    path='/data1/jcampos/HAWQ-main/data/val',
-                                    data_percentage=1)
-
 now = datetime.now() # current date and time
 DATE_TIME = now.strftime('%m%d%Y_%H%M%S')
 
-model = quantize_arch_dict[args.arch](model=None)
 
-def main(bit_config_key=None, model=None):
+def main(bit_config_key, train_loader, val_loader):
 
     now = datetime.now() # current date and time
     date_time = now.strftime('%m%d%Y_%H%M%S')
@@ -53,12 +42,24 @@ def main(bit_config_key=None, model=None):
     logging.getLogger().addHandler(logging.StreamHandler())
     logging.info(args)
 
-    model = quantize_arch_dict[args.arch](model=None, 
-                                use_batchnorm=args.batch_norm, silu=args.swish, gelu=args.gelu)
+    model = quantize_arch_dict[args.arch](model=None, batchnorm=args.batch_norm, silu=args.silu, gelu=args.gelu, dense_out=args.dense_out)
+    teacher = None 
 
     if args.resume:
         logging.info(f'Loading checkpoint: {args.resume}')
         load_checkpoint(model, args.resume, args)
+
+    if args.distill_method == 'KD_naive' or args.dc:
+        teacher = quantize_arch_dict['hawq_jettagger'](model=None, batchnorm=args.batch_norm, silu=args.silu, gelu=args.gelu, dense_out=args.dense_out)
+        if args.teacher_checkpoint:
+            teacher_checkpoint = f'checkpoints/{args.teacher_checkpoint}/model_best.pth.tar'
+            logging.info(f'Loading fp32 weights from: {teacher_checkpoint}')
+            # load pretrained weights to model
+            load_checkpoint(teacher, teacher_checkpoint, args)
+        else:
+            logging.info(f'Using bit-config for teacher: {args.teacher_quant_scheme}')
+            bit_config = bit_config_dict[f'bit_config_hawq_jettagger_{args.teacher_quant_scheme}']
+            set_bit_config(teacher, bit_config, args)
 
     bit_config = bit_config_dict[bit_config_key]
     if args.arch == 'hawq_jettagger':
@@ -89,13 +90,10 @@ def main(bit_config_key=None, model=None):
     acc_record = list()
 
     for epoch in range(args.epochs):
-        if args.distributed:
-            train_sampler.set_epoch(epoch)
-
         adjust_learning_rate(optimizer, epoch, args)
 
         # train for one epoch
-        epoch_loss, d_loss = train(train_loader, model, criterion, optimizer, epoch, args)
+        epoch_loss = train(train_loader, model, criterion, optimizer, epoch, args, teacher)
         acc1 = validate(val_loader, model, criterion, args)
 
         loss_record.append(epoch_loss)
@@ -141,11 +139,22 @@ def main(bit_config_key=None, model=None):
         logging.error('Could not log model configuration and training info.')
 
 
+# python train.py --arch hawq_jettagger --train-scheme random --epochs 10 --batch-norm --lr 0.001 --distill-method KD_naive --teacher-checkpoint uniform6/07012022_223011 --distill-alpha 0.1
 if __name__ == '__main__':
 
+    train_loader = utils.getTrainData(dataset='hlc_jets',
+                                    batch_size=args.batch_size,
+                                    path='/Users/jcampos/Documents/datasets/lhc_jets/train',
+                                    for_inception=False,
+                                    data_percentage=1)
+    val_loader = utils.getTestData(dataset='hlc_jets',
+                                    batch_size=args.batch_size,
+                                    path='/data1/jcampos/HAWQ-main/data/val',
+                                    data_percentage=1)
+
     bit_configs = [
-        'bit_config_hawq_jettagger_uniform4'
+        'bit_config_hawq_jettagger_uniform6'
     ]
 
     for config in bit_configs:
-        main(config)
+        main(config, train_loader, val_loader)

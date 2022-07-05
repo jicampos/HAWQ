@@ -140,6 +140,7 @@ parser.add_argument('--integer', type=bool, default=True)
 parser.add_argument('--batch-norm', action='store_true')
 parser.add_argument('--silu', action='store_true')
 parser.add_argument('--gelu', action='store_true')
+parser.add_argument('--dc', action='store_true')
 parser.add_argument('--train-scheme', 
                     type=str, 
                     choices=['direct', 'gradual', 'random'], 
@@ -148,9 +149,9 @@ parser.add_argument('--teacher-quant-scheme',
                     type=str,
                     default='uniform12',
                     help='quant scheme for teacher network used to do distillation')
-parser.add_argument('--teacher-tag',
+parser.add_argument('--teacher-checkpoint',
                     type=str,
-                    help='tag used to load checkpoint to do distillation')
+                    help='used to load checkpoint for teacher in distillation')
 # export.py
 parser.add_argument('--load', type=str)
 parser.add_argument('--dense-out', action='store_true')

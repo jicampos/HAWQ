@@ -78,14 +78,12 @@ def set_bit_config(model, bit_config, args):
 
 def load_checkpoint(model, filename, args):
     checkpoint = torch.load(filename, map_location=torch.device('cpu'))
-
     if 'fp32' in filename:
         model.load_state_dict(checkpoint['state_dict'])
-        model.eval()
+        model.train()
         return
-    
-    set_bit_config(model, checkpoint['bit_config'], args)
 
+    set_bit_config(model, checkpoint['bit_config'], args)
     checkpoint = checkpoint['state_dict']
     model_dict  = model.state_dict()
     modified_dict  = {}
@@ -93,14 +91,10 @@ def load_checkpoint(model, filename, args):
     for key, value in checkpoint.items():
         if model_dict[key].shape != value.shape:
             print(f'mismatch: {key}: {value}')
-            value = torch.tensor([value])
-        if 'fc_scaling_factor' in key:
-            print(f'\t{key}: {value}')
-        
+            value = torch.tensor([value], dtype=torch.float64)
         modified_dict[key] = value
-    
     model.load_state_dict(modified_dict, strict=False)
-    model.eval()
+    model.train()
 
 # ------------------------------------------------------------
 # training
@@ -137,10 +131,10 @@ def train(train_loader, model, criterion, optimizer, epoch, args, teacher=None):
     batch_time = AverageMeter('Time', ':6.3f')
     data_time = AverageMeter('Data', ':6.3f')
     losses = AverageMeter('Loss', ':.4e')
-    top1 = AverageMeter('Acc@1', ':6.2f')
+    accuracy = AverageMeter('Acc', ':6.2f')
     progress = ProgressMeter(
         len(train_loader),
-        [batch_time, data_time, losses, top1],
+        [batch_time, data_time, losses, accuracy],
         prefix="Epoch: [{}]".format(epoch))
 
     # switch to train mode
@@ -150,35 +144,35 @@ def train(train_loader, model, criterion, optimizer, epoch, args, teacher=None):
         model.train()
     lossdc = 0
     end = time.time()
-    for i, (images, target) in enumerate(train_loader):
+    for i, (X_train, y_train) in enumerate(train_loader):
         # measure data loading time
         data_time.update(time.time() - end)
 
         # compute output
-        output = model(images.float())
+        output = model(X_train.float())
 
         if args.dc:
             output, output_feats = output[0], output[1]
-            _, teach_feats = teacher(images.float())
+            _, teach_feats = teacher(X_train.float())
             lossdc = domain_discrepancy(output_feats, teach_feats, loss_type='kl')
 
         if args.distill_method == 'None':
-            loss = criterion(output, target.float()) + lossdc
+            loss = criterion(output, y_train.float()) + lossdc
         elif args.distill_method == 'KD_naive':
-            teacher_output = teacher(images.float())
-            loss = loss_kd(output, target.float(), teacher_output, args) + lossdc
+            teacher_output = teacher(X_train.float())
+            loss = loss_kd(output, y_train.float(), teacher_output, args) + lossdc
         else:
             raise Exception(f'Distill Method {args.distill_method} is not implemented')
 
         # measure accuracy and record loss
-        losses.update(loss.item(), images.size(0))
+        losses.update(loss.item(), X_train.size(0))
 
         _, preds = torch.max(output, 1)
         tmp_pred = preds.view(-1).cpu()
-        tmp_lbl = torch.max(target, 1)[1].view(-1).cpu()
-        accuracy_value = accuracy_score(np.nan_to_num(tmp_lbl.numpy()), np.nan_to_num(tmp_pred.numpy()))
+        tmp_lbl = torch.max(y_train, 1)[1].view(-1).cpu()
+        acc = accuracy_score(np.nan_to_num(tmp_lbl.numpy()), np.nan_to_num(tmp_pred.numpy()))
         # update progress meter 
-        top1.update(accuracy_value, images.size(0))
+        accuracy.update(acc, X_train.size(0))
 
         # compute gradient and do SGD step
         optimizer.zero_grad()
@@ -194,13 +188,15 @@ def train(train_loader, model, criterion, optimizer, epoch, args, teacher=None):
     
     return losses.avg
 
+# def validate_accuracy(val_dataset, model)
+
 def validate(val_loader, model, criterion, args):
     batch_time = AverageMeter('Time', ':6.3f')
     losses = AverageMeter('Loss', ':.4e')
-    top1 = AverageMeter('Acc@1', ':6.2f')
+    accuracy = AverageMeter('Acc', ':6.2f')
     progress = ProgressMeter(
         len(val_loader),
-        [batch_time, losses, top1],
+        [batch_time, losses, accuracy],
         prefix='Test: ')
 
     # switch to evaluate mode
@@ -211,27 +207,27 @@ def validate(val_loader, model, criterion, args):
 
     with torch.no_grad():
         end = time.time()
-        for i, (images, target) in enumerate(val_loader):
+        for i, (X_val, y_val) in enumerate(val_loader):
             # compute output
-            output = model(images.float())
+            output = model(X_val.float())
 
             if args.dc:
                 output, _ = output[0], output[1]
 
-            loss = criterion(output, target.float())
+            loss = criterion(output, y_val.float())
             
             # measure accuracy and record loss
-            losses.update(loss.item(), images.size(0))
+            losses.update(loss.item(), X_val.size(0))
 
             _, preds = torch.max(output, 1)
             tmp_pred = preds.view(-1).cpu()
-            tmp_lbl = torch.max(target, 1)[1].view(-1).cpu()
-            accuracy_value = accuracy_score(np.nan_to_num(tmp_lbl.numpy()), np.nan_to_num(tmp_pred.numpy()))
+            tmp_lbl = torch.max(y_val, 1)[1].view(-1).cpu()
+            acc = accuracy_score(np.nan_to_num(tmp_lbl.numpy()), np.nan_to_num(tmp_pred.numpy()))
             # update progress meter 
-            top1.update(accuracy_value, images.size(0))
+            accuracy.update(acc, X_val.size(0))
 
             predlist = torch.cat([predlist, preds.view(-1).cpu()])
-            lbllist = torch.cat([lbllist, torch.max(target, 1)[1].view(-1).cpu()])
+            lbllist = torch.cat([lbllist, torch.max(y_val, 1)[1].view(-1).cpu()])
             
             # measure elapsed time
             batch_time.update(time.time() - end)
@@ -240,9 +236,10 @@ def validate(val_loader, model, criterion, args):
             if i % args.print_freq == 0:
                 progress.display(i)
 
-        accuracy_value = accuracy_score(np.nan_to_num(lbllist.numpy()), np.nan_to_num(predlist.numpy()))
-        top1.update(accuracy_value, 1)
-        logging.info(' * Acc@1 {top1.avg:.3f}'.format(top1=top1))
+        acc = accuracy_score(np.nan_to_num(lbllist.numpy()), np.nan_to_num(predlist.numpy()))
+        logging.info(' * Acc {accuracy:.3f}'.format(accuracy=acc))
+        accuracy.update(acc, 1)
+        logging.info(' * Acc {accuracy.avg:.3f}'.format(accuracy=accuracy))
 
     torch.save({'convbn_scaling_factor': {k: v for k, v in model.state_dict().items() if 'convbn_scaling_factor' in k},
                 'fc_scaling_factor': {k: v for k, v in model.state_dict().items() if 'fc_scaling_factor' in k},
@@ -252,8 +249,7 @@ def validate(val_loader, model, criterion, args):
                 }, args.save_path + 'quantized_checkpoint.pth.tar')
 
     unfreeze_model(model)
-
-    return top1.avg
+    return accuracy.avg
 
 def save_checkpoint(state, is_best, filename=None):
     torch.save(state, filename + 'checkpoint.pth.tar')

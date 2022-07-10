@@ -72,18 +72,14 @@ def main(bit_config_key, train_loader, val_loader):
         load_checkpoint(model, args.resume, args)
 
     if args.distill_method == "KD_naive" or args.dc:
-        teacher = quantize_arch_dict["hawq_jettagger"](
-            model=None,
-            batchnorm=args.batch_norm,
-            silu=args.silu,
-            gelu=args.gelu,
-            dense_out=args.dense_out,
+        teacher = quantize_arch_dict["jettagger"](
+            model=None, silu=args.silu, gelu=args.gelu, dense_out=args.dense_out
         )
         if args.teacher_checkpoint:
             teacher_checkpoint = (
                 f"checkpoints/{args.teacher_checkpoint}/model_best.pth.tar"
             )
-            logging.info(f"Loading fp32 weights from: {teacher_checkpoint}")
+            logging.info(f"Loading teacher fp32 weights from: {teacher_checkpoint}")
             # load pretrained weights to model
             load_checkpoint(teacher, teacher_checkpoint, args)
         else:
@@ -123,27 +119,27 @@ def main(bit_config_key, train_loader, val_loader):
     criterion = nn.BCELoss()
 
     best_epoch = 0
-    best_acc1 = 0
+    best_acc = 0
     loss_record = list()
     acc_record = list()
 
     for epoch in range(args.epochs):
         adjust_learning_rate(optimizer, epoch, args)
-
         # train for one epoch
         epoch_loss = train(
             train_loader, model, criterion, optimizer, epoch, args, teacher
         )
-        acc1 = validate(val_loader, model, criterion, args)
+        acc = validate(val_loader, model, criterion, args)
 
+        # record loss and accuracy
         loss_record.append(epoch_loss)
-        acc_record.append(acc1)
+        acc_record.append(acc)
 
         # remember best acc@1 and save checkpoint
-        is_best = acc1 > best_acc1
-        best_acc1 = max(acc1, best_acc1)
+        is_best = acc > best_acc
+        best_acc = max(acc, best_acc)
 
-        logging.info(f"Best acc at epoch {epoch}: {best_acc1}")
+        logging.info(f"Best acc at epoch {epoch}: {best_acc}")
         if is_best:
             # record the best epoch
             best_epoch = epoch
@@ -153,7 +149,7 @@ def main(bit_config_key, train_loader, val_loader):
                     "epoch": epoch + 1,
                     "arch": args.arch,
                     "state_dict": model.state_dict(),
-                    "best_acc1": best_acc1,
+                    "best_acc": best_acc,
                     "optimizer": optimizer.state_dict(),
                     "bit_config_key": bit_config_key,
                     "bit_config": bit_config,
@@ -162,7 +158,7 @@ def main(bit_config_key, train_loader, val_loader):
                 save_path,
             )
 
-    best_acc = f"{quant_scheme}/{date_time}: {best_acc1}\n"
+    best_acc = f"{quant_scheme}/{date_time}: {best_acc}\n"
     log_training(best_acc, f"{quant_scheme}/best.txt", args.save_path)
     log_training(best_acc, f"{DATE_TIME}.txt", args.save_path)
     log_training(loss_record, "model_loss.json", save_path)
@@ -174,7 +170,7 @@ def main(bit_config_key, train_loader, val_loader):
             "======================================================================"
         )
         logging.info(f"arch: {args.arch}")
-        logging.info(f"best-acc: {best_acc1}")
+        logging.info(f"best-acc: {best_acc}")
         logging.info(f"best-epoch: {best_epoch+1}/{args.epochs}")
         logging.info(f"resume: {args.resume}")
         logging.info(f"train-scheme: {args.train_scheme}")
@@ -187,20 +183,21 @@ def main(bit_config_key, train_loader, val_loader):
         logging.error("Could not log model configuration and training info.")
 
 
+# python train.py --arch hawq_jettagger --train-scheme random --epochs 5 --batch-norm --lr 0.001 --distill-method KD_naive --teacher-checkpoint fp32/06252022_134937 --distill-alpha 0.1
 # python train.py --arch hawq_jettagger --train-scheme random --epochs 10 --batch-norm --lr 0.001 --distill-method KD_naive --teacher-checkpoint uniform6/07012022_223011 --distill-alpha 0.1
 if __name__ == "__main__":
 
     train_loader = utils.getTrainData(
         dataset="hlc_jets",
         batch_size=args.batch_size,
-        path="/Users/jcampos/Documents/datasets/lhc_jets/train",
+        path="/data1/jcampos/datasets/train",
         for_inception=False,
         data_percentage=1,
     )
     val_loader = utils.getTestData(
         dataset="hlc_jets",
         batch_size=args.batch_size,
-        path="/data1/jcampos/HAWQ-main/data/val",
+        path="/data1/jcampos/datasets/val",
         data_percentage=1,
     )
 

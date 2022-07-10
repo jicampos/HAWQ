@@ -11,11 +11,11 @@ import qonnx
 from qonnx.util.cleanup import cleanup
 import onnxoptimizer
 
-from .wrapper import model_info
+from .export_modules import model_info
 from .function import register_custom_ops, domain_info
 
 
-from .wrapper import (
+from .export_modules import (
     ExportQonnxQuantAct,
     ExportQonnxQuantLinear,
     ExportQonnxQuantConv2d,
@@ -63,7 +63,6 @@ class ExportManager(nn.Module):
 
     def copy_model(self, model):
         try:
-            # https://discuss.pytorch.org/t/how-does-one-reproduce-the-deepcopy-error-of-tensors-made-by-code/69852/2
             self.export_model = copy.deepcopy(model)
         except Exception as e:
             logging.error(e)
@@ -177,4 +176,4 @@ class ExportManager(nn.Module):
                         custom_opsets={domain_info["name"]: 1},
                     )
                     print(f"Model saved: {filename}")
-                    # self.optimize_onnx_model(filename)
+                    self.optimize_onnx_model(filename)

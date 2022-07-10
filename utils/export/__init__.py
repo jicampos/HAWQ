@@ -1,2 +1,2 @@
 from .manager import ExportManager
-from .wrapper import model_info
+from .export_modules import model_info

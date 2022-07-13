@@ -12,9 +12,8 @@ class QuantFunc(autograd.Function):
     def forward(
         ctx, x, scale, zero_point, bit_width, signed, narrow_range, rounding_mode
     ):
-        min_ = -1 * (2 ** bit_width.numpy())
-        max_ = (2 ** bit_width.numpy()) - 1
-        return torch.clamp(torch.round((x / scale) + zero_point), min_, max_)
+        n = 2 ** (bit_width.numpy() - 1) - 1
+        return torch.clamp(torch.round((x / scale) + zero_point), -n - 1, n)
 
     @staticmethod
     def symbolic(

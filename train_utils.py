@@ -182,14 +182,13 @@ def train(train_loader, model, criterion, optimizer, epoch, args, teacher=None):
         # measure accuracy and record loss
         losses.update(loss.item(), X_train.size(0))
 
-        _, preds = torch.max(output, 1)
-        tmp_pred = preds.view(-1).cpu()
-        tmp_lbl = torch.max(y_train, 1)[1].view(-1).cpu()
-        acc = accuracy_score(
-            np.nan_to_num(tmp_lbl.numpy()), np.nan_to_num(tmp_pred.numpy())
+        batch_preds = torch.max(output, 1)[1]
+        batch_labels = torch.max(y_train, 1)[1]
+        batch_acc = accuracy_score(
+            batch_labels.detach().numpy(), batch_preds.detach().numpy()
         )
         # update progress meter
-        accuracy.update(acc, X_train.size(0))
+        accuracy.update(batch_acc, X_train.size(0))
 
         # compute gradient and do SGD step
         optimizer.zero_grad()
@@ -220,8 +219,8 @@ def validate(val_loader, model, criterion, args):
     # switch to evaluate mode
     freeze_model(model)
     model.eval()
-    predlist = torch.zeros(0, dtype=torch.long, device="cpu")
-    lbllist = torch.zeros(0, dtype=torch.long, device="cpu")
+    pred_list = torch.zeros(0, dtype=torch.long, device="cpu")
+    label_list = torch.zeros(0, dtype=torch.long, device="cpu")
 
     with torch.no_grad():
         end = time.time()
@@ -237,17 +236,16 @@ def validate(val_loader, model, criterion, args):
             # measure accuracy and record loss
             losses.update(loss.item(), X_val.size(0))
 
-            _, preds = torch.max(output, 1)
-            tmp_pred = preds.view(-1).cpu()
-            tmp_lbl = torch.max(y_val, 1)[1].view(-1).cpu()
-            acc = accuracy_score(
-                np.nan_to_num(tmp_lbl.numpy()), np.nan_to_num(tmp_pred.numpy())
+            batch_preds = torch.max(output, 1)[1]
+            batch_labels = torch.max(y_val, 1)[1]
+            batch_acc = accuracy_score(
+                batch_labels.detach().numpy(), batch_preds.detach().numpy()
             )
             # update progress meter
-            accuracy.update(acc, X_val.size(0))
+            accuracy.update(batch_acc, X_val.size(0))
 
-            predlist = torch.cat([predlist, preds.view(-1).cpu()])
-            lbllist = torch.cat([lbllist, torch.max(y_val, 1)[1].view(-1).cpu()])
+            pred_list = torch.cat([pred_list, batch_preds])
+            label_list = torch.cat([label_list, batch_labels])
 
             # measure elapsed time
             batch_time.update(time.time() - end)
@@ -257,7 +255,7 @@ def validate(val_loader, model, criterion, args):
                 progress.display(i)
 
         acc = accuracy_score(
-            np.nan_to_num(lbllist.numpy()), np.nan_to_num(predlist.numpy())
+            np.nan_to_num(label_list.numpy()), np.nan_to_num(pred_list.numpy())
         )
         logging.info(" * Acc {accuracy:.3f}".format(accuracy=acc))
         accuracy.update(acc, 1)

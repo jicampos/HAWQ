@@ -135,15 +135,13 @@ def main(bit_config_key, train_loader, val_loader):
         loss_record.append(epoch_loss)
         acc_record.append(acc)
 
-        # remember best acc@1 and save checkpoint
+        # remember best acc and save checkpoint
         is_best = acc > best_acc
         best_acc = max(acc, best_acc)
+        best_epoch = epoch if is_best == True else best_epoch
 
-        logging.info(f"Best acc at epoch {epoch}: {best_acc}")
+        logging.info(f"Best acc at epoch {best_epoch+1}: {best_acc}")
         if is_best:
-            # record the best epoch
-            best_epoch = epoch
-
             save_checkpoint(
                 {
                     "epoch": epoch + 1,
@@ -158,9 +156,9 @@ def main(bit_config_key, train_loader, val_loader):
                 save_path,
             )
 
-    best_acc = f"{quant_scheme}/{date_time}: {best_acc}\n"
-    log_training(best_acc, f"{quant_scheme}/best.txt", args.save_path)
-    log_training(best_acc, f"{DATE_TIME}.txt", args.save_path)
+    scheme_best_acc = f"{quant_scheme}/{date_time}: {best_acc}\n"
+    log_training(scheme_best_acc, f"{quant_scheme}/best.txt", args.save_path)
+    log_training(scheme_best_acc, f"{DATE_TIME}.txt", args.save_path)
     log_training(loss_record, "model_loss.json", save_path)
     log_training(acc_record, "model_acc.json", save_path)
 
@@ -190,14 +188,14 @@ if __name__ == "__main__":
     train_loader = utils.getTrainData(
         dataset="hlc_jets",
         batch_size=args.batch_size,
-        path="/data1/jcampos/datasets/train",
+        path="/Users/jcampos/Documents/datasets/lhc_jets/train",
         for_inception=False,
         data_percentage=1,
     )
     val_loader = utils.getTestData(
         dataset="hlc_jets",
         batch_size=args.batch_size,
-        path="/data1/jcampos/datasets/val",
+        path="/Users/jcampos/Documents/datasets/lhc_jets/val",
         data_percentage=1,
     )
 

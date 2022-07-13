@@ -124,6 +124,8 @@ class Q_MNIST(torch.nn.Module):
         x = self.fc2(x, act_scaling_factor)
         return F.log_softmax(x, dim=1)
 
+def mnist():
+    return MNIST()
 
 def q_mnist(model=None):
     if model is None:

@@ -95,7 +95,7 @@ def getTestData(dataset='imagenet',
         return test_loader
 
     elif dataset == 'hlc_jets':
-        from .JetTaggingDataset import JetTaggingDataset
+        from .jet_dataset import JetTaggingDataset
         test_dataset = JetTaggingDataset(path)
 
         dataset_length = int(len(test_dataset) * data_percentage)
@@ -145,7 +145,7 @@ def getTrainData(dataset='imagenet',
         return train_loader
     
     elif dataset == 'hlc_jets':
-        from .JetTaggingDataset import JetTaggingDataset
+        from .jet_dataset import JetTaggingDataset
         train_dataset = JetTaggingDataset(path)
 
         dataset_length = int(len(train_dataset) * data_percentage)
@@ -156,4 +156,3 @@ def getTrainData(dataset='imagenet',
             num_workers=1, pin_memory=True)
 
         return train_loader
-

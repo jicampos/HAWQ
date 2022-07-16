@@ -3,20 +3,20 @@ import torch.optim
 import torch.utils.data
 import torch.nn.functional as F
 from torchvision import transforms
-
+from torchvision import datasets
+from args import args
 import numpy as np
 from sklearn.metrics import accuracy_score
-
 from utils import q_mnist, mnist
-from utils.mnist_dataset import MNISTDataset
 
 
 def load_dataset():
     transform = transforms.Compose(
         [transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))]
     )
-    train_data = MNISTDataset("./datasets/mnist", train=True, transform=transform)
-    test_data = MNISTDataset("./datasets/mnist", train=False, transform=transform)
+
+    train_data = datasets.MNIST("./datasets/mnist", train=True, download=True, transform=transform)
+    test_data = datasets.MNIST("./datasets/mnist", train=False, download=True, transform=transform)
 
     train_loader = torch.utils.data.DataLoader(
         train_data, batch_size=1024, shuffle=True, num_workers=1, pin_memory=True
@@ -145,13 +145,12 @@ def main():
 
 if __name__ == "__main__":
     model = main()
-
     from utils.export import ExportManager
 
     # create an export manager
     export_manager = ExportManager(model)
     # run model inference on hawq and export modules
-    x = torch.randn([1, 28, 28])
+    x = torch.randn([1, 1, 28, 28])
     export_pred, hawq_pred = export_manager(x)
     # export the model to qonnx
     export_manager.export(x, "hawq2qonnx_cnn.onnx")

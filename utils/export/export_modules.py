@@ -100,12 +100,13 @@ class ExportQonnxQuantAct(nn.Module):
         e = e.type(torch.float32)
         output = z_int * m
         output = output / (2.0**e)
+        output = torch.round(output)
         return torch.clamp(output, self.clamp_min, self.clamp_max)
 
     def pre_quant_scale(self, x, pre_act_scaling_factor):
         if pre_act_scaling_factor.item() != 1:
-            # x = torch.round(x / pre_act_scaling_factor.item())
             x = x / pre_act_scaling_factor.item()
+        # x = torch.round(x)
         return x, pre_act_scaling_factor
 
     def forward(
@@ -125,9 +126,9 @@ class ExportQonnxQuantAct(nn.Module):
 
         if self.export_mode:
             x, pre_act_scaling_factor = self.pre_quant_scale(x, pre_act_scaling_factor)
-            # quant_node = get_quant_func(self.bit_width)
-            # x = quant_node.apply(x, *self.node_inputs, *self.node_attributes)
-            x = self.compute_quant_act(x, pre_act_scaling_factor)
+            quant_node = get_quant_func(self.bit_width)
+            x = quant_node.apply(x, *self.node_inputs, *self.node_attributes)
+            # x = self.compute_quant_act(x, pre_act_scaling_factor)
             model_info["quant_out_export_mode"][self.layer] = x
             return (x, self.scale)
         else:
@@ -206,7 +207,7 @@ class ExportQonnxQuantLinear(nn.Module):
                 )
                 x = torch.add(x, bias)
 
-            # x = torch.round(x)
+            x = torch.round(x)
             bias_scaling_factor = self.scale * prev_act_scaling_factor.clone()
             x = x * bias_scaling_factor.view(1, -1)
             model_info["dense_out_export_mode"][self.layer] = x.clone()
@@ -270,6 +271,7 @@ class ExportQonnxQuantConv2d(nn.Module):
             1, -1
         ) * prev_act_scaling_factor.view(1, -1)
         correct_output_scale = bias_scaling_factor.view(1, -1, 1, 1)
+        correct_output_scale = correct_output_scale[0][0][0][0]
 
         if self.export_mode:
             QuantFunc = get_quant_func(self.layer.weight_bit)

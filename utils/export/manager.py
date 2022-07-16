@@ -9,6 +9,7 @@ from torch._C import ListType, OptionalType
 import onnx
 import qonnx
 from qonnx.util.cleanup import cleanup
+from qonnx.util.to_channels_last import to_channels_last
 import onnxoptimizer
 
 from .export_modules import model_info
@@ -132,6 +133,7 @@ class ExportManager(nn.Module):
             onnx.load_model(model_path), passes=["extract_constant_to_initializer"]
         )
         cleanup(onnx_model, out_file=model_path)
+        to_channels_last(model_path, out_file=model_path)
 
     def gen_filename(self):
         from datetime import datetime

@@ -127,7 +127,7 @@ class Q_JetTagger(nn.Module):
         x = self.fc3(x, act_scaling_factor)
         d3 = x.detach().clone()
         if self.batchnorm:
-            xx = self.bn3(x)
+            x = self.bn3(x)
         x = self.act(x)
         x, act_scaling_factor = self.quant_act3(x, act_scaling_factor)
         q3 = x.detach().clone()

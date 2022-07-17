@@ -4,6 +4,11 @@ import torch
 import torch.nn as nn
 from torch._C import ListType, OptionalType
 
+from ..quantization_utils.quant_utils import (
+    SymmetricQuantFunction,
+    symmetric_linear_quantization_params,
+)
+
 from .function import get_quant_func
 from .function import TruncFunc, RoundFunc, ConvFunc
 
@@ -289,27 +294,42 @@ class ExportQonnxQuantConv2d(nn.Module):
 
 # ------------------------------------------------------------
 class ExportQonnxQuantBnConv2d(nn.Module):
-    def __init__(self, layer) -> None:
+    def __init__(self, hawq_layer) -> None:
         super().__init__()
-        self.layer = layer
+        self.hawq_layer = hawq_layer
         self.export_mode = False
-
-        quant_layer = QuantConv2d()
-        quant_layer.set_param(self.layer.conv)
-        self.export_quant_conv = ExportQonnxQuantConv2d(quant_layer)
+        self.init_parameters()
 
         self.bn = torch.nn.BatchNorm2d(
-            self.layer.bn.num_features, self.layer.bn.eps, self.layer.bn.momentum
+            self.hawq_layer.bn.num_features,
+            self.hawq_layer.bn.eps,
+            self.hawq_layer.bn.momentum,
         )
-        self.bn.weight = self.layer.bn.weight
-        self.bn.bias = self.layer.bn.bias
-
-        self.bn.running_mean = self.layer.bn.running_mean
-        self.bn.running_var = self.layer.bn.running_var
 
     def __repr__(self):
         s = f"{self.__class__.__name__}()"
         return s
+
+    def init_parameters(self):
+        w_transform = self.hawq_layer.conv.weight.data.contiguous().view(
+            self.hawq_layer.conv.out_channels, -1
+        )
+        w_min = w_transform.min(dim=1).values
+        w_max = w_transform.max(dim=1).values
+        self.conv_scaling_factor = symmetric_linear_quantization_params(
+            self.hawq_layer.weight_bit, w_min, w_max, self.hawq_layer.per_channel
+        )
+        self.weight_integer = SymmetricQuantFunction.apply(
+            self.hawq_layer.conv.weight,
+            self.hawq_layer.weight_bit,
+            self.conv_scaling_factor,
+        )
+
+        quant_layer = QuantConv2d()
+        quant_layer.set_param(self.hawq_layer.conv)
+        quant_layer.weight_integer = self.weight_integer
+        quant_layer.conv_scaling_factor = self.conv_scaling_factor
+        self.export_quant_conv = ExportQonnxQuantConv2d(quant_layer)
 
     def forward(self, x, pre_act_scaling_factor=None):
         if type(x) is tuple:
@@ -317,7 +337,7 @@ class ExportQonnxQuantBnConv2d(nn.Module):
             x = x[0]
 
         if self.export_mode:
-            x, conv_scaling_factor = self.export_quant_conv(x)
+            x, conv_scaling_factor = self.export_quant_conv(x, pre_act_scaling_factor)
             return (self.bn(x), conv_scaling_factor)
         else:
             x, convbn_scaling_factor = self.layer(x, pre_act_scaling_factor)

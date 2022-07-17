@@ -85,9 +85,9 @@ class ConvFunc(autograd.Function):
         g, x, quant_input, layer, dilations, group, kernel_shape, pads, strides
     ):
         return g.op(
-            'Conv',
+            "Conv",
             x,
-            quant_input, 
+            quant_input,
             dilations_i=dilations,
             group_i=group,
             kernel_shape_i=kernel_shape,

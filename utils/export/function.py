@@ -13,7 +13,10 @@ class QuantFunc(autograd.Function):
         ctx, x, scale, zero_point, bit_width, signed, narrow_range, rounding_mode
     ):
         n = 2 ** (bit_width.numpy() - 1) - 1
-        return torch.clamp(torch.round((x / scale) + zero_point), -n - 1, n)
+        x_int = torch.clamp(torch.round((x / scale) + zero_point), -n - 1, n)
+        output = x_int - zero_point
+        output = output * scale
+        return output
 
     @staticmethod
     def symbolic(

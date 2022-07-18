@@ -312,6 +312,8 @@ class ExportQonnxQuantBnConv2d(nn.Module):
         self.bn.running_mean = self.hawq_layer.bn.running_mean
         self.bn.running_var = self.hawq_layer.bn.running_var
 
+        self.output_factor = self.bn.weight.view(1, -1, 1, 1) / torch.sqrt(self.bn.running_var + self.bn.eps).view(1, -1, 1, 1)
+
     def __repr__(self):
         s = f"{self.__class__.__name__}()"
         return s
@@ -344,11 +346,11 @@ class ExportQonnxQuantBnConv2d(nn.Module):
 
         if self.export_mode:
             x, conv_scaling_factor = self.export_quant_conv(x, pre_act_scaling_factor)
-            return (self.bn(x), conv_scaling_factor)
+            return (self.bn(x), conv_scaling_factor.view(-1) * self.output_factor.view(-1))
         else:
             x, convbn_scaling_factor = self.hawq_layer(x, pre_act_scaling_factor)
             model_info["convbn_scaling_factor"][self.hawq_layer] = convbn_scaling_factor
-            return self.export_quant_conv(x, convbn_scaling_factor)
+            return (x, convbn_scaling_factor)
 
 
 # ------------------------------------------------------------

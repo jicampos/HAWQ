@@ -88,8 +88,7 @@ class ExportQonnxQuantAct(nn.Module):
 
         new_scale = pre_act_scaling_factor / self.scale
         m, e = batch_frexp(new_scale)
-        new_scale = m / (2.0**e)
-        new_scale = 1 / new_scale
+        new_scale = (2.0**e) / m
         self.node_inputs = (
             torch.tensor(new_scale.item(), dtype=torch.float32),  # scale
             torch.tensor(0, dtype=torch.float32),  # zero point
@@ -110,8 +109,7 @@ class ExportQonnxQuantAct(nn.Module):
 
     def pre_quant_scale(self, x, pre_act_scaling_factor):
         if pre_act_scaling_factor.item() != 1:
-            x = x / pre_act_scaling_factor.item()
-        # x = torch.round(x)
+            x = torch.round(x / pre_act_scaling_factor.item())
         return x, pre_act_scaling_factor
 
     def forward(
@@ -134,10 +132,12 @@ class ExportQonnxQuantAct(nn.Module):
             quant_node = get_quant_func(self.bit_width)
             x = quant_node.apply(x, *self.node_inputs, *self.node_attributes)
             # x = self.compute_quant_act(x, pre_act_scaling_factor)
+            x = x / self.node_inputs[0]
+            x = x * self.scale
             model_info["quant_out_export_mode"][self.layer] = x
             return (x, self.scale)
         else:
-            # self.update_node_inputs(pre_act_scaling_factor)
+            self.update_node_inputs(pre_act_scaling_factor)
             x, act_scaling_factor = self.layer(
                 x,
                 pre_act_scaling_factor,
@@ -198,7 +198,7 @@ class ExportQonnxQuantLinear(nn.Module):
             x = x[0]
 
         if self.export_mode:
-            # x = x / prev_act_scaling_factor.view(1, -1)
+            x = x / prev_act_scaling_factor.view(1, -1)
             quant_node = get_quant_func(self.weight_node_inputs[2].item())
             weights = quant_node.apply(
                 self.fc.weight.data, *self.weight_node_inputs, *self.node_attributes
@@ -281,6 +281,7 @@ class ExportQonnxQuantConv2d(nn.Module):
         if self.export_mode:
             QuantFunc = get_quant_func(self.layer.weight_bit)
             weights = QuantFunc.apply(self.layer.weight_integer, *self.quant_args)
+            x = x / prev_act_scaling_factor
             return (
                 ConvFunc.apply(x, weights, self.layer, *self.conv_args)
                 * correct_output_scale,
@@ -305,6 +306,11 @@ class ExportQonnxQuantBnConv2d(nn.Module):
             self.hawq_layer.bn.eps,
             self.hawq_layer.bn.momentum,
         )
+
+        self.bn.weight = self.hawq_layer.bn.weight
+        self.bn.bias = self.hawq_layer.bn.bias
+        self.bn.running_mean = self.hawq_layer.bn.running_mean
+        self.bn.running_var = self.hawq_layer.bn.running_var
 
     def __repr__(self):
         s = f"{self.__class__.__name__}()"
@@ -340,8 +346,8 @@ class ExportQonnxQuantBnConv2d(nn.Module):
             x, conv_scaling_factor = self.export_quant_conv(x, pre_act_scaling_factor)
             return (self.bn(x), conv_scaling_factor)
         else:
-            x, convbn_scaling_factor = self.layer(x, pre_act_scaling_factor)
-            model_info["convbn_scaling_factor"][self.layer] = convbn_scaling_factor
+            x, convbn_scaling_factor = self.hawq_layer(x, pre_act_scaling_factor)
+            model_info["convbn_scaling_factor"][self.hawq_layer] = convbn_scaling_factor
             return self.export_quant_conv(x, convbn_scaling_factor)
 
 

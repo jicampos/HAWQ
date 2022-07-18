@@ -8,13 +8,16 @@ from torch.optim.lr_scheduler import StepLR
 from ..quantization_utils.quant_modules import QuantAct, QuantAveragePool2d, QuantConv2d, QuantMaxPool2d, QuantLinear, QuantBnConv2d
 
 
-class MNIST(nn.Module):
-    def __init__(self):
-        super(MNIST, self).__init__()
+class CNN(nn.Module):
+    def __init__(self, batch_norm=False):
+        super(CNN, self).__init__()
+        self.batch_norm = batch_norm
         self.conv1 = nn.Conv2d(1, 32, 3, 1)
-        self.bn1 = nn.BatchNorm2d(32)
+        if self.batch_norm:
+            self.bn1 = nn.BatchNorm2d(32)
         self.conv2 = nn.Conv2d(32, 64, 3, 1)
-        self.bn2 = nn.BatchNorm2d(64)
+        if self.batch_norm:
+            self.bn2 = nn.BatchNorm2d(64)
         self.relu = nn.ReLU()
         self.dropout1 = nn.Dropout(0.25)
         self.dropout2 = nn.Dropout(0.5)
@@ -23,10 +26,12 @@ class MNIST(nn.Module):
 
     def forward(self, x):
         x = self.conv1(x)
-        x = self.bn1(x)
+        if self.batch_norm:
+            x = self.bn1(x)
         x = self.relu(x)
         x = self.conv2(x)
-        x = self.bn2(x)
+        if self.batch_norm:
+            x = self.bn2(x)
         x = self.relu(x)
         x = F.max_pool2d(x, 2)
         x = self.dropout1(x)
@@ -39,7 +44,7 @@ class MNIST(nn.Module):
         return output
 
 
-class Q_MNIST(torch.nn.Module):
+class Q_CNN(torch.nn.Module):
     """
     Quantized Neural Network model for MNIST dataset.
 
@@ -57,37 +62,40 @@ class Q_MNIST(torch.nn.Module):
     def __init__(self, model,
                        weight_precision=8,
                        bias_precision=32,
-                       act_precision=16) -> None:
+                       act_precision=16,
+                       batch_norm=False) -> None:
         super().__init__()
         if model is None:
             raise ValueError('Model cannot be None')
-        
+        self.batch_norm = batch_norm
+
         self.quant_input = QuantAct(act_precision)
         self.quant_act1 = QuantAct(act_precision)
         self.quant_act2 = QuantAct(act_precision)
         self.quant_act3 = QuantAct(act_precision)
 
-        conv1 = getattr(model, 'conv1')
-        bn1 = getattr(model, 'bn1')
-        quant_layer = QuantBnConv2d()
-        quant_layer.set_param(conv1, bn1)
-        setattr(self, 'convbn1', quant_layer)
+        if self.batch_norm:
+            conv1 = getattr(model, 'conv1')
+            bn1 = getattr(model, 'bn1')
+            quant_layer = QuantBnConv2d()
+            quant_layer.set_param(conv1, bn1)
+            setattr(self, 'convbn1', quant_layer)
 
-        conv2 = getattr(model, 'conv2')
-        bn2 = getattr(model, 'bn2')
-        quant_layer = QuantBnConv2d()
-        quant_layer.set_param(conv2, bn2)
-        setattr(self, 'convbn2', quant_layer)
+            conv2 = getattr(model, 'conv2')
+            bn2 = getattr(model, 'bn2')
+            quant_layer = QuantBnConv2d()
+            quant_layer.set_param(conv2, bn2)
+            setattr(self, 'convbn2', quant_layer)
+        else:
+            layer = getattr(model, 'conv1')
+            quant_layer = QuantConv2d()
+            quant_layer.set_param(layer)
+            setattr(self, 'conv1', quant_layer)
 
-        layer = getattr(model, 'conv1')
-        quant_layer = QuantConv2d()
-        quant_layer.set_param(layer)
-        setattr(self, 'conv1', quant_layer)
-
-        layer = getattr(model, 'conv2')
-        quant_layer = QuantConv2d()
-        quant_layer.set_param(layer)
-        setattr(self, 'conv2', quant_layer)
+            layer = getattr(model, 'conv2')
+            quant_layer = QuantConv2d()
+            quant_layer.set_param(layer)
+            setattr(self, 'conv2', quant_layer)
 
         layer = getattr(model, 'relu')
         setattr(self, 'relu', layer)
@@ -102,16 +110,20 @@ class Q_MNIST(torch.nn.Module):
         quant_layer.set_param(layer)
         setattr(self, 'fc2', quant_layer)
 
-        self.pool = QuantAveragePool2d(kernel_size=2, stride=2, padding=0)
-
     def forward(self, x):
         # quantize input
         x, act_scaling_factor = self.quant_input(x)
         # quantized conv 
-        x, weight_scaling_factor = self.convbn1(x, act_scaling_factor)
+        if self.batch_norm:
+            x, weight_scaling_factor = self.convbn1(x, act_scaling_factor)
+        else:
+            x, weight_scaling_factor = self.conv1(x, act_scaling_factor)
         x, act_scaling_factor = self.quant_act1(self.relu(x), act_scaling_factor, weight_scaling_factor)
         # quantized conv 
-        x, weight_scaling_factor = self.convbn2(x, act_scaling_factor)
+        if self.batch_norm:
+            x, weight_scaling_factor = self.convbn2(x, act_scaling_factor)
+        else:
+            x, weight_scaling_factor = self.conv2(x, act_scaling_factor)
         x, act_scaling_factor = self.quant_act2(self.relu(x), act_scaling_factor, weight_scaling_factor)
         x = F.max_pool2d(x, 2)
 
@@ -124,10 +136,10 @@ class Q_MNIST(torch.nn.Module):
         x = self.fc2(x, act_scaling_factor)
         return F.log_softmax(x, dim=1)
 
-def mnist():
-    return MNIST()
+def cnn(batch_norm):
+    return CNN(batch_norm)
 
-def q_mnist(model=None):
+def q_cnn(model, batch_norm):
     if model is None:
-        model = MNIST()
-    return Q_MNIST(model)
+        model = cnn(batch_norm)
+    return Q_CNN(model, batch_norm=batch_norm)

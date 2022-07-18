@@ -1,38 +1,44 @@
+import argparse
+
+import numpy as np
+from sklearn.metrics import accuracy_score
+
 import torch
 import torch.optim
 import torch.utils.data
 import torch.nn.functional as F
 from torchvision import transforms
 from torchvision import datasets
-from args import args
-import numpy as np
-from sklearn.metrics import accuracy_score
-from utils import q_mnist, mnist
 
+from utils import q_cnn, cnn
 
-def load_dataset():
+def load_dataset(batch_size):
     transform = transforms.Compose(
         [transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))]
     )
 
-    train_data = datasets.MNIST("./datasets/mnist", train=True, download=True, transform=transform)
-    test_data = datasets.MNIST("./datasets/mnist", train=False, download=True, transform=transform)
+    train_data = datasets.MNIST(
+        "./datasets/mnist", train=True, download=True, transform=transform
+    )
+    test_data = datasets.MNIST(
+        "./datasets/mnist", train=False, download=True, transform=transform
+    )
 
     train_loader = torch.utils.data.DataLoader(
-        train_data, batch_size=1024, shuffle=True, num_workers=1, pin_memory=True
+        train_data, batch_size=batch_size, shuffle=True, num_workers=1, pin_memory=True
     )
     test_loader = torch.utils.data.DataLoader(
-        test_data, batch_size=1024, shuffle=True, num_workers=1, pin_memory=True
+        test_data, batch_size=batch_size, shuffle=True, num_workers=1, pin_memory=True
     )
 
     return train_loader, test_loader
 
 
-def load_model(quantized=True):
+def load_model(quantized, bn):
     if quantized:
-        model = q_mnist()
+        model = q_cnn(model=None, batch_norm=bn)
     else:
-        model = mnist()
+        model = cnn(bn)
     return model
 
 
@@ -46,8 +52,8 @@ def accuracy(y_true, y_pred):
     return accuracy_score(y_true, y_pred)
 
 
-def train(model, train_loader, optimizer, epoch):
-    dataset_size = len(train_loader) * 1024
+def train(model, train_loader, optimizer, epoch, batch_size):
+    dataset_size = len(train_loader) * batch_size
     samples_passed = 0
     print_freq = dataset_size % 20
 
@@ -66,16 +72,14 @@ def train(model, train_loader, optimizer, epoch):
 
         samples_passed += len(x_train)
         if samples_passed % print_freq == 0:
-            print(
-                f"[{epoch+1}] [{samples_passed}/{dataset_size}] - acc {train_acc:.4f} loss {loss:.4f}"
-            )
+            print(f"[{epoch+1}] [{samples_passed}/{dataset_size}] - acc {train_acc:.4f} loss {loss:.4f}")
     return train_acc
 
 
-def validate(model, test_loader, epoch):
-    dataset_size = len(test_loader) * 1024
+def validate(model, test_loader, epoch, batch_size):
+    dataset_size = len(test_loader) * batch_size
     samples_passed = 0
-    print_freq = 1024
+    print_freq = batch_size
     pred_list = torch.zeros(0, dtype=torch.long, device="cpu")
     true_list = torch.zeros(0, dtype=torch.long, device="cpu")
 
@@ -111,17 +115,19 @@ def save_checkpoint(epoch, best_acc, model, optimizer, filename):
     )
 
 
-def main():
-    max_epochs = 1
+def main(args):
+    max_epochs = args.epochs
     best_acc = 0
 
-    train_loader, val_loader = load_dataset()
-    model = load_model(quantized=True)
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
+    train_loader, val_loader = load_dataset(args.batch_size)
+    model = load_model(args.quantized, args.bn)
+    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
+
+    print(model)
 
     for epoch in range(max_epochs):
-        train_acc = train(model, train_loader, optimizer, epoch)
-        val_acc = validate(model, val_loader, epoch)
+        train_acc = train(model, train_loader, optimizer, epoch, args.batch_size)
+        val_acc = validate(model, val_loader, epoch, args.batch_size)
 
         if val_acc > best_acc:
             best_acc = val_acc
@@ -133,24 +139,29 @@ def main():
                 "checkpoints/cnn/qcnn_model_best.pth.tar",
             )
 
-        print(
-            "==========================================================================="
-        )
+        print("===========================================================================")
         print(f"[{epoch+1}] train {train_acc:.4f} val {val_acc:.4f}")
-        print(
-            "==========================================================================="
-        )
+        print("===========================================================================")
     return model
 
 
 if __name__ == "__main__":
-    model = main()
+
+    parser = argparse.ArgumentParser("Options for training HAWQ CNN")
+    parser.add_argument("--lr", default=0.01, type=float, help="Learning rate.")
+    parser.add_argument("--epochs", default=10, type=int, help="Number of epochs in training.")
+    parser.add_argument("--batch-size", default=1024, type=int, help="Mini-batch size")
+    parser.add_argument("--bn", action="store_true", help="Optional train with Batch Normalization.")
+    parser.add_argument("--quantized", action="store_true", help="Optional train with quantized CNN.")
+    parser.add_argument("--save-file", default="hawq2qonnx_cnn.onnx", type=str, help="Optional filename for exported onnx model.")
+    args = parser.parse_args()
+
+    model = main(args)
+
     from utils.export import ExportManager
 
     # create an export manager
     export_manager = ExportManager(model)
-    # run model inference on hawq and export modules
-    x = torch.randn([1, 1, 28, 28])
-    export_pred, hawq_pred = export_manager(x)
     # export the model to qonnx
-    export_manager.export(x, "hawq2qonnx_cnn.onnx")
+    x = torch.randn([1, 1, 28, 28])
+    export_manager.export(x, args.save_file)

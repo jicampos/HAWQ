@@ -6,12 +6,7 @@ import torch
 import torch.nn as nn
 from torch._C import ListType, OptionalType
 
-import onnx
-import qonnx
-from qonnx.util.cleanup import cleanup
-from qonnx.util.to_channels_last import to_channels_last
-import onnxoptimizer
-
+from .export_utils import optimize_onnx_model, gen_filename
 from .export_modules import model_info
 from .function import register_custom_ops, domain_info
 
@@ -128,32 +123,12 @@ class ExportManager(nn.Module):
         else:
             self.export_model.apply(self.disable_export)
 
-    def optimize_onnx_model(self, model_path):
-        onnx_model = onnxoptimizer.optimize(
-            onnx.load_model(model_path), passes=["extract_constant_to_initializer"]
-        )
-        cleanup(onnx_model, out_file=model_path)
-        to_channels_last(model_path, out_file=model_path)
-
-    def gen_filename(self):
-        from datetime import datetime
-
-        now = datetime.now()  # current date and time
-        date_time = now.strftime("%m%d%Y_%H%M%S")
-        if "Jet" in self.export_model._get_name():
-            filename = f"hawq2qonnx_jet_{date_time}.onnx"
-        elif "MNIST" in self.export_model._get_name():
-            filename = f"hawq2qonnx_mnist_{date_time}.onnx"
-        else:
-            filename = f"hawq2qonnx_{date_time}.onnx"
-        return filename
-
     def export(self, x, filename=None, save=True):
         assert x is not None, "Input x is not initialized"
         assert type(x) is torch.Tensor, "Input x must be a torch.Tensor"
 
         if filename is None:
-            filename = self.gen_filename()
+            filename = gen_filename(self.export_model)
         if len(x) > 1:
             logging.info("Only [1, ?] dimensions are supported. Selecting first.")
             x = x[0].view(1, -1)
@@ -177,5 +152,5 @@ class ExportManager(nn.Module):
                         operator_export_type=torch.onnx.OperatorExportTypes.ONNX,
                         custom_opsets={domain_info["name"]: 1},
                     )
-                    print(f"Model saved: {filename}")
-                    self.optimize_onnx_model(filename)
+                    optimize_onnx_model(filename)
+                    print(f"Model saved {filename}")

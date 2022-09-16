@@ -4,7 +4,6 @@ import warnings
 
 import torch
 import torch.nn as nn
-from torch._C import ListType, OptionalType
 
 from .export_utils import optimize_onnx_model, gen_filename
 from .export_modules import model_info
@@ -43,7 +42,6 @@ class ExportManager(nn.Module):
 
         self.copy_model(model)
         self.replace_layers()
-        self.init_tracker()
 
     def predict(self, x):
         self.set_export_mode("enable")
@@ -95,18 +93,6 @@ class ExportManager(nn.Module):
         for param in self.export_model.parameters():
             param.requires_grad_(True)
 
-    def init_tracker(self):
-        """Track output of export and original layers"""
-        self.tracker = dict()
-        self.tracker["dense_out"] = dict()
-        self.tracker["dense_out_export_mode"] = dict()
-        self.tracker["quant_out"] = dict()
-        self.tracker["quant_out_export_mode"] = dict()
-        self.tracker["transformed"] = dict()
-        self.tracker["act_scaling_factor"] = dict()
-        self.tracker["conv_scaling_factor"] = dict()
-        self.tracker["convbn_scaling_factor"] = dict()
-
     @staticmethod
     def enable_export(module):
         if isinstance(module, SET_EXPORT_MODE):
@@ -128,7 +114,7 @@ class ExportManager(nn.Module):
         assert type(x) is torch.Tensor, "Input x must be a torch.Tensor"
 
         if filename is None:
-            filename = gen_filename(self.export_model)
+            filename = gen_filename()
         if len(x) > 1:
             logging.info("Only [1, ?] dimensions are supported. Selecting first.")
             x = x[0].view(1, -1)
@@ -152,5 +138,6 @@ class ExportManager(nn.Module):
                         operator_export_type=torch.onnx.OperatorExportTypes.ONNX,
                         custom_opsets={domain_info["name"]: 1},
                     )
+                    print("Optimizing...")
                     optimize_onnx_model(filename)
-                    print(f"Model saved {filename}")
+                    print(f"Model saved to: {filename}")

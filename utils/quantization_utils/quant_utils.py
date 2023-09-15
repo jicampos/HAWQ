@@ -149,7 +149,9 @@ def symmetric_linear_quantization_params(num_bits,
             scale = max(saturation_min.abs(), saturation_max.abs())
             scale = torch.clamp(scale, min=1e-8) / n
 
-    return scale
+    sf_scale = 2 ** 4
+    fixed_point = int(scale * sf_scale + 0.5)  # Round to the nearest integer
+    return fixed_point / sf_scale
 
 
 def asymmetric_linear_quantization_params(num_bits,

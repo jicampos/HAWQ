@@ -9,6 +9,8 @@ from decimal import Decimal
 from torch.autograd import Function, Variable
 
 
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
 def clamp(input, min, max, inplace=False):
     """
     Clamp tensor input to (min, max).
@@ -209,8 +211,8 @@ def batch_frexp(inputs):
 
     output_e = 31. - output_e
 
-    return torch.from_numpy(output_m).cuda().view(shape_of_input), \
-           torch.from_numpy(output_e).cuda().view(shape_of_input)
+    return torch.from_numpy(output_m).to(device).view(shape_of_input), \
+           torch.from_numpy(output_e).to(device).view(shape_of_input)
 
 
 class ste_round(Function):
@@ -248,7 +250,7 @@ class SymmetricQuantFunction(Function):
         else:
             raise ValueError("The SymmetricQuantFunction requires a pre-calculated scaling factor")
 
-        zero_point = torch.tensor(0.).cuda()
+        zero_point = torch.tensor(0.).to(device)
 
         new_quant_x = linear_quantize(x, scale, zero_point, inplace=False)
 
@@ -296,7 +298,7 @@ class AsymmetricQuantFunction(Function):
         if specified_zero_point is not None:
             zero_point = specified_zero_point
         else:
-            zero_point = torch.tensor(0).cuda()
+            zero_point = torch.tensor(0).to(device)
 
         new_quant_x = linear_quantize(x, scale, zero_point, inplace=False)
         n = 2 ** k - 1

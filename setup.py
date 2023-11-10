@@ -25,7 +25,6 @@ setuptools.setup(
     long_description=long_description,
     install_requires=[
         "numpy>=1.16.0",
-        "pyparser",
         "setuptools>=41.0.0",
     ],
     extra_requires={

@@ -6,6 +6,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.multiprocessing as mp
 from torch.nn import Module, Parameter
+import torch.nn.init as init
 from .quant_utils import *
 
 
@@ -32,6 +33,9 @@ class QuantLinear(Module):
     """
 
     def __init__(self,
+                 in_features, 
+                 out_features,
+                 bias = True,
                  weight_bit=4,
                  bias_bit=None,
                  full_precision_flag=False,
@@ -41,6 +45,20 @@ class QuantLinear(Module):
                  weight_percentile=0,
                  ):
         super(QuantLinear, self).__init__()
+        self.in_features = in_features
+        self.out_features = out_features
+        self.register_buffer('fc_scaling_factor', torch.zeros(self.out_features))
+        self.weight = Parameter(
+            torch.zeros((self.out_features, self.in_features))
+        ) 
+        init.kaiming_uniform_(self.weight, nonlinearity='relu')
+        self.register_buffer('weight_integer', torch.zeros_like(self.weight))
+        if bias == True:
+            self.bias = Parameter(torch.zeros(self.out_features))
+            self.register_buffer('bias_integer', torch.zeros_like(self.bias))
+        else:
+            self.bias = None
+
         self.full_precision_flag = full_precision_flag
         self.weight_bit = weight_bit
         self.quant_mode = quant_mode
@@ -625,6 +643,14 @@ class QuantConv2d(Module):
     """
 
     def __init__(self,
+                 in_channels, 
+                 out_channels, 
+                 kernel_size,
+                 stride,
+                 padding,
+                 dilation=1,
+                 groups=1,
+                 bias=True,
                  weight_bit=4,
                  bias_bit=None,
                  full_precision_flag=False,
@@ -633,6 +659,24 @@ class QuantConv2d(Module):
                  fix_flag=False,
                  weight_percentile=0):
         super(QuantConv2d, self).__init__()
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.kernel_size = kernel_size 
+        self.stride = stride
+        self.padding = padding
+        self.dilation = dilation
+        self.groups = groups
+        self.register_buffer('conv_scaling_factor', torch.zeros(self.out_channels))
+        self.weight = Parameter(
+            torch.zeros((self.out_channels, self.in_channels, self.kernel_size, self.kernel_size))
+        )
+        init.kaiming_uniform_(self.weight, nonlinearity='relu')
+        self.register_buffer('weight_integer', torch.zeros_like(self.weight, dtype=torch.int8))
+        if bias == True:
+            self.bias = Parameter(torch.zeros((self.out_channels)))
+        else:
+            self.bias = None
+
         self.full_precision_flag = full_precision_flag
         self.weight_bit = weight_bit
         self.quant_mode = quant_mode
@@ -729,11 +773,11 @@ class QuantConv2d(Module):
 
         if self.bias is None:
             return (F.conv2d(x_int, self.weight_integer, torch.zeros_like(bias_scaling_factor.view(-1)),
-                             self.conv.stride, self.conv.padding, self.conv.dilation, self.conv.groups)
+                             self.stride, self.padding, self.dilation, self.groups)
                     * correct_output_scale, self.conv_scaling_factor)
         else:
-            return (F.conv2d(x_int, self.weight_integer, self.bias_integer, self.conv.stride, self.conv.padding,
-                             self.conv.dilation, self.conv.groups) * correct_output_scale, self.conv_scaling_factor)
+            return (F.conv2d(x_int, self.weight_integer, self.bias_integer, self.stride, self.padding,
+                             self.dilation, self.groups) * correct_output_scale, self.conv_scaling_factor)
 
 
 def freeze_model(model):

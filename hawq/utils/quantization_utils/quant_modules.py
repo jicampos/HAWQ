@@ -37,7 +37,7 @@ class QuantLinear(Module):
                  out_features,
                  bias = True,
                  weight_bit=4,
-                 bias_bit=None,
+                 bias_bit=4,
                  full_precision_flag=False,
                  quant_mode='symmetric',
                  per_channel=False,

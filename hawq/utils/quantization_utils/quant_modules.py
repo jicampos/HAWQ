@@ -47,7 +47,7 @@ class QuantLinear(Module):
         super(QuantLinear, self).__init__()
         self.in_features = in_features
         self.out_features = out_features
-        self.register_buffer('fc_scaling_factor', torch.zeros(self.out_features))
+        self.register_buffer('fc_scaling_factor', torch.zeros(1))
         self.weight = Parameter(
             torch.zeros((self.out_features, self.in_features))
         ) 
@@ -666,7 +666,7 @@ class QuantConv2d(Module):
         self.padding = padding
         self.dilation = dilation
         self.groups = groups
-        self.register_buffer('conv_scaling_factor', torch.zeros(self.out_channels))
+        self.register_buffer('conv_scaling_factor', torch.tensor(0))
         self.weight = Parameter(
             torch.zeros((self.out_channels, self.in_channels, self.kernel_size, self.kernel_size))
         )

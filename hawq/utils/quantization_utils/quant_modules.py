@@ -350,8 +350,16 @@ class QuantBnConv2d(Module):
     """
 
     def __init__(self,
+                 in_channels, 
+                 out_channels, 
+                 kernel_size, 
+                 stride, 
+                 padding, 
+                 dilation=1,
+                 groups=1,
+                 bias=True,
                  weight_bit=4,
-                 bias_bit=None,
+                 bias_bit=4,
                  full_precision_flag=False,
                  quant_mode="symmetric",
                  per_channel=False,
@@ -360,6 +368,19 @@ class QuantBnConv2d(Module):
                  fix_BN=False,
                  fix_BN_threshold=None):
         super(QuantBnConv2d, self).__init__()
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.kernel_size = kernel_size
+        self.stride = stride
+        self.padding = padding
+        self.dilation = dilation
+        self.groups = groups
+        self.conv = nn.Conv2d(self.in_channels, self.out_channels, self.kernel_size, self.stride, self.padding, bias=bias)
+        self.bn = nn.BatchNorm2d(self.out_channels)
+        self.bn.momentum = 0.99
+        self.register_buffer('convbn_scaling_factor', torch.tensor(0))
+        self.register_buffer('weight_integer', torch.zeros_like(self.conv.weight.data))
+        self.register_buffer('bias_integer', torch.zeros_like(self.bn.bias))
         self.weight_bit = weight_bit
         self.full_precision_flag = full_precision_flag
         self.per_channel = per_channel
@@ -433,9 +454,32 @@ class QuantBnConv2d(Module):
 
         # run the forward without folding BN
         if self.fix_BN == False:
-            w_transform = self.conv.weight.data.contiguous().view(self.conv.out_channels, -1)
-            w_min = w_transform.min(dim=1).values
-            w_max = w_transform.max(dim=1).values
+            if self.per_channel:
+                w_transform = self.conv.weight.data.contiguous().view(self.conv.out_channels, -1)
+                if self.weight_percentile == 0:
+                    w_min = w_transform.min(dim=1).values
+                    w_max = w_transform.max(dim=1).values
+                else:
+                    lower_percentile = 100 - self.weight_percentile
+                    upper_percentile = self.weight_percentile
+                    input_length = w_transform.shape[1]
+
+                    lower_index = math.ceil(input_length * lower_percentile * 0.01)
+                    upper_index = math.ceil(input_length * upper_percentile * 0.01)
+
+                    w_min = torch.kthvalue(w_transform, k=lower_index, dim=1).values
+                    w_max = torch.kthvalue(w_transform, k=upper_index, dim=1).values
+            elif not self.per_channel:
+                if self.weight_percentile == 0:
+                    w_min = self.conv.weight.data.min()
+                    w_max = self.conv.weight.data.max()
+                else:
+                    w_min, w_max = get_percentile_min_max(
+                        self.conv.weight.data.view(-1), 
+                        100 - self.weight_percentile,
+                        self.weight_percentile, 
+                        output_tensor=True
+                    )
 
             conv_scaling_factor = symmetric_linear_quantization_params(self.weight_bit, w_min, w_max, self.per_channel)
             weight_integer = self.weight_function(self.conv.weight, self.weight_bit, conv_scaling_factor)

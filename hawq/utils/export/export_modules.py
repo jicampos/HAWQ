@@ -197,27 +197,27 @@ class ExportQonnxQuantConv2d(nn.Module):
             "ROUND",  # rounding mode
         )
 
-        dilation = self.hawq_layer.conv.dilation
+        dilation = self.hawq_layer.dilation
         if type(dilation) != tuple:
             dilation = (dilation, dilation)
 
-        kernel_size = self.hawq_layer.conv.kernel_size
+        kernel_size = self.hawq_layer.kernel_size
         if type(kernel_size) != tuple:
             kernel_size = (kernel_size, kernel_size)
 
-        pads = self.hawq_layer.conv.padding
+        pads = self.hawq_layer.padding
         if type(pads) != tuple:
             pads = (pads, pads, pads, pads)
         elif len(pads) == 2:
             pads = (pads[0], pads[0], pads[1], pads[1])
 
-        strides = self.hawq_layer.conv.stride
+        strides = self.hawq_layer.stride
         if type(strides) != tuple:
             strides = (strides, strides)
 
         self.conv_args = (
             dilation,
-            self.hawq_layer.conv.groups,
+            self.hawq_layer.groups,
             kernel_size,
             pads,
             strides,
@@ -290,8 +290,8 @@ class ExportQonnxQuantBnConv2d(nn.Module):
         return s
 
     def init_conv(self):
-        w_transform = self.hawq_layer.conv.weight.data.contiguous().view(
-            self.hawq_layer.conv.out_channels, -1
+        w_transform = self.hawq_layer.weight.data.contiguous().view(
+            self.hawq_layer.out_channels, -1
         )
         w_min = w_transform.min(dim=1).values
         w_max = w_transform.max(dim=1).values
@@ -299,15 +299,24 @@ class ExportQonnxQuantBnConv2d(nn.Module):
             self.hawq_layer.weight_bit, w_min, w_max, self.hawq_layer.per_channel
         )
         self.weight_integer = SymmetricQuantFunction.apply(
-            self.hawq_layer.conv.weight,
+            self.hawq_layer.weight,
             self.hawq_layer.weight_bit,
             self.conv_scaling_factor,
         )
 
-        quant_layer = QuantConv2d(weight_bit=self.hawq_layer.weight_bit, bias_bit=self.hawq_layer.bias_bit)
-        quant_layer.set_param(self.hawq_layer.conv)
-        quant_layer.weight_integer = self.weight_integer
-        quant_layer.conv_scaling_factor = self.conv_scaling_factor
+        quant_layer = QuantConv2d(
+            in_channels=self.hawq_layer.in_channels,
+            out_channels=self.hawq_layer.out_channels,
+            kernel_size=self.hawq_layer.kernel_size,
+            stride=self.hawq_layer.stride,
+            padding=self.hawq_layer.padding
+            weight_bit=self.hawq_layer.weight_bit, 
+            bias_bit=self.hawq_layer.bias_bit
+        )
+        # quant_layer.set_param(self.hawq_layer.conv)
+        quant_layer.weight = self.hawq_layer.weight
+        quant_layer.weight_integer = self.hawq_layer.weight_integer
+        quant_layer.conv_scaling_factor = self.hawq_layer.conv_scaling_factor
         self.export_quant_conv = ExportQonnxQuantConv2d(quant_layer)
 
     def forward(self, x, pre_act_scaling_factor=None):

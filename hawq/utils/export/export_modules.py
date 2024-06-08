@@ -309,7 +309,7 @@ class ExportQonnxQuantBnConv2d(nn.Module):
             out_channels=self.hawq_layer.out_channels,
             kernel_size=self.hawq_layer.kernel_size,
             stride=self.hawq_layer.stride,
-            padding=self.hawq_layer.padding
+            padding=self.hawq_layer.padding,
             weight_bit=self.hawq_layer.weight_bit, 
             bias_bit=self.hawq_layer.bias_bit
         )

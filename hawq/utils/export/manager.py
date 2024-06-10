@@ -86,10 +86,10 @@ class ExportManager(nn.Module):
             elif isinstance(layer, QuantAveragePool2d):
                 onnx_export_layer = ExportQonnxQuantAveragePool2d(layer)
                 setattr(module, name, onnx_export_layer)
-            elif isinstance(layer, nn.ModuleList)
+            elif isinstance(layer, nn.ModuleList):
                 for bl in layer:
                     self.replace_layers(bl)
-            elif isinstance(layer, nn.Sequential, nn.Module):
+            elif isinstance(layer, (nn.Sequential, nn.Module)):
                 self.replace_layers(layer)
             # track changes
             if onnx_export_layer is not None:

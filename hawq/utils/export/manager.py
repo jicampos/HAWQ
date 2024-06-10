@@ -40,6 +40,8 @@ class ExportManager(nn.Module):
         super().__init__()
         assert model is not None, "Model is not initialized"
 
+        self.export_model = model
+
         self.copy_model(model)
         self.replace_layers(model)
 
@@ -84,8 +86,11 @@ class ExportManager(nn.Module):
             elif isinstance(layer, QuantAveragePool2d):
                 onnx_export_layer = ExportQonnxQuantAveragePool2d(layer)
                 setattr(module, name, onnx_export_layer)
-            elif isinstance(layer, nn.Sequential, nn.ModuleList, nn.Module):
+            elif isinstance(layer, nn.Sequential, nn.Module):
                 self.replace_layers(layer)
+            elif isinstance(layer, nn.ModuleList)
+                for bl in layer:
+                    self.replace_layers(bl)
             # track changes
             if onnx_export_layer is not None:
                 model_info["transformed"][layer] = onnx_export_layer

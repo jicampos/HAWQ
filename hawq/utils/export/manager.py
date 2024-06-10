@@ -41,7 +41,7 @@ class ExportManager(nn.Module):
         assert model is not None, "Model is not initialized"
 
         self.copy_model(model)
-        self.replace_layers()
+        self.replace_layers(model)
 
     def predict(self, x):
         self.set_export_mode("enable")
@@ -62,34 +62,34 @@ class ExportManager(nn.Module):
             logging.error(e)
             raise Exception(e)
 
-    def replace_layers(self):
-        for param in self.export_model.parameters():
+    def replace_layers(self, module):
+        for param in module.parameters():
             param.requires_grad_(False)
 
-        for name in dir(self.export_model):
-            layer = getattr(self.export_model, name)
+        for name in dir(module):
+            layer = getattr(module, name)
             onnx_export_layer = None
             if isinstance(layer, QuantAct):
                 onnx_export_layer = ExportQonnxQuantAct(layer)
-                setattr(self.export_model, name, onnx_export_layer)
+                setattr(module, name, onnx_export_layer)
             elif isinstance(layer, QuantLinear):
                 onnx_export_layer = ExportQonnxQuantLinear(layer)
-                setattr(self.export_model, name, onnx_export_layer)
+                setattr(module, name, onnx_export_layer)
             elif isinstance(layer, QuantConv2d):
                 onnx_export_layer = ExportQonnxQuantConv2d(layer)
-                setattr(self.export_model, name, onnx_export_layer)
+                setattr(module, name, onnx_export_layer)
             elif isinstance(layer, QuantBnConv2d):
                 onnx_export_layer = ExportQonnxQuantBnConv2d(layer)
-                setattr(self.export_model, name, onnx_export_layer)
+                setattr(module, name, onnx_export_layer)
             elif isinstance(layer, QuantAveragePool2d):
                 onnx_export_layer = ExportQonnxQuantAveragePool2d(layer)
-                setattr(self.export_model, name, onnx_export_layer)
-            elif isinstance(layer, nn.Sequential):
+                setattr(module, name, onnx_export_layer)
+            elif isinstance(layer, nn.Sequential, nn.ModuleList, nn.Module):
                 self.replace_layers(layer)
             # track changes
             if onnx_export_layer is not None:
                 model_info["transformed"][layer] = onnx_export_layer
-        for param in self.export_model.parameters():
+        for param in module.parameters():
             param.requires_grad_(True)
 
     @staticmethod

@@ -63,6 +63,25 @@ class ExportManager(nn.Module):
         except Exception as e:
             logging.error(e)
             raise Exception(e)
+    
+    def replace_block(self, block):
+        """Strong assumption: no sequential or block lists defined"""
+        for idx, module in enumerate(block):
+            if isinstance(module, QuantAct):
+                onnx_export_layer = ExportQonnxQuantAct(module)
+                block[idx] = onnx_export_layer
+            elif isinstance(module, QuantLinear):
+                onnx_export_layer = ExportQonnxQuantLinear(module)
+                block[idx] = onnx_export_layer
+            elif isinstance(module, QuantConv2d):
+                onnx_export_layer = ExportQonnxQuantConv2d(module)
+                block[idx] = onnx_export_layer
+            elif isinstance(module, QuantBnConv2d):
+                onnx_export_layer = ExportQonnxQuantBnConv2d(module)
+                block[idx] = onnx_export_layer
+            elif isinstance(module, QuantAveragePool2d):
+                onnx_export_layer = ExportQonnxQuantAveragePool2d(module)
+                block[idx] = onnx_export_layer
 
     def replace_layers(self, module):
         for param in module.parameters():
@@ -87,8 +106,7 @@ class ExportManager(nn.Module):
                 onnx_export_layer = ExportQonnxQuantAveragePool2d(layer)
                 setattr(module, name, onnx_export_layer)
             elif isinstance(layer, nn.ModuleList):
-                for bl in layer:
-                    self.replace_layers(bl)
+                self.replace_block(layer)
             elif isinstance(layer, (nn.Sequential, nn.Module)):
                 self.replace_layers(layer)
             # track changes

@@ -379,8 +379,13 @@ class QuantBnConv2d(Module):
         self.bn = nn.BatchNorm2d(self.out_channels)
         self.bn.momentum = 0.99
         self.register_buffer('convbn_scaling_factor', torch.tensor(0))
+        self.register_buffer('conv_scaling_factor', torch.tensor(0))
         self.register_buffer('weight_integer', torch.zeros_like(self.conv.weight.data))
         self.register_buffer('bias_integer', torch.zeros_like(self.bn.bias))
+        self.register_buffer('fold_BN', torch.tensor(0.))
+        self.convbn_scaling_factor = torch.tensor(0)
+        self.conv_scaling_factor = torch.tensor(0)
+        self.fold_BN = torch.tensor(1.) if fix_BN == True else torch.tensor(0.)
         self.weight_bit = weight_bit
         self.full_precision_flag = full_precision_flag
         self.per_channel = per_channel
@@ -442,6 +447,8 @@ class QuantBnConv2d(Module):
         else:
             raise ValueError("unknown quant mode: {}".format(self.quant_mode))
 
+        if self.fold_BN == 1:
+            self.fix_BN = True
         # determine whether to fold BN or not
         if self.fix_flag == False:
             self.counter += 1
@@ -451,6 +458,7 @@ class QuantBnConv2d(Module):
                 if self.counter == self.fix_BN_threshold:
                     print("Start Training with Folded BN")
                 self.fix_BN = True
+                self.fold_BN = torch.tensor(1.)
 
         # run the forward without folding BN
         if self.fix_BN == False:
@@ -481,10 +489,10 @@ class QuantBnConv2d(Module):
                         output_tensor=True
                     )
 
-            conv_scaling_factor = symmetric_linear_quantization_params(self.weight_bit, w_min, w_max, self.per_channel)
-            weight_integer = self.weight_function(self.conv.weight, self.weight_bit, conv_scaling_factor)
+            self.conv_scaling_factor = symmetric_linear_quantization_params(self.weight_bit, w_min, w_max, self.per_channel)
+            weight_integer = self.weight_function(self.conv.weight, self.weight_bit, self.conv_scaling_factor)
             conv_output = F.conv2d(x, weight_integer, self.conv.bias, self.conv.stride, self.conv.padding,
-                                   self.conv.dilation, self.conv.groups) * conv_scaling_factor.view(1, -1, 1, 1)
+                                   self.conv.dilation, self.conv.groups) * self.conv_scaling_factor.view(1, -1, 1, 1)
 
             batch_mean = torch.mean(conv_output, dim=(0, 2, 3))
             batch_var = torch.var(conv_output, dim=(0, 2, 3))
@@ -497,7 +505,7 @@ class QuantBnConv2d(Module):
             output_factor = self.bn.weight.view(1, -1, 1, 1) / torch.sqrt(batch_var + self.bn.eps).view(1, -1, 1, 1)
             output = output_factor * (conv_output - batch_mean.view(1, -1, 1, 1)) + self.bn.bias.view(1, -1, 1, 1)
 
-            return (output, conv_scaling_factor.view(-1) * output_factor.view(-1))
+            return (output, self.conv_scaling_factor.view(-1) * output_factor.view(-1))
         # fold BN and fix running statistics
         else:
             running_std = torch.sqrt(self.bn.running_var.detach() + self.bn.eps)
@@ -711,6 +719,7 @@ class QuantConv2d(Module):
         self.dilation = dilation
         self.groups = groups
         self.register_buffer('conv_scaling_factor', torch.tensor(0))
+        self.conv_scaling_factor = torch.tensor(0.)
         self.weight = Parameter(
             torch.zeros((self.out_channels, self.in_channels, self.kernel_size, self.kernel_size))
         )

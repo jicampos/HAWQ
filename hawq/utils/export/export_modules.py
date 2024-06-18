@@ -271,7 +271,8 @@ class ExportQonnxQuantBnConv2d(nn.Module):
         self.export_mode = False
         self.init_conv()
 
-        self.fix_BN = self.hawq_layer.fix_BN
+        # self.fix_BN = self.hawq_layer.fix_BN
+        self.fix_BN = bool(self.hawq_layer.fold_BN == 1)
         self.bn = torch.nn.BatchNorm2d(
             self.hawq_layer.bn.num_features,
             self.hawq_layer.bn.eps,
@@ -321,7 +322,10 @@ class ExportQonnxQuantBnConv2d(nn.Module):
         quant_layer.weight = self.hawq_layer.conv.weight
         quant_layer.weight_integer = self.hawq_layer.weight_integer
         # need to conv_scaling_factor and convbn_scaling_factor for fix and merge bn
-        quant_layer.conv_scaling_factor = self.hawq_layer.convbn_scaling_factor   # Assume bn folded 
+        if self.fix_BN == True: 
+            quant_layer.conv_scaling_factor = self.hawq_layer.convbn_scaling_factor
+        else:
+            quant_layer.conv_scaling_factor = self.hawq_layer.conv_scaling_factor
         self.export_quant_conv = ExportQonnxQuantConv2d(quant_layer)
 
     def forward(self, x, pre_act_scaling_factor=None):

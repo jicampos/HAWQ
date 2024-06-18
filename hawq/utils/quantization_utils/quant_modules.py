@@ -422,6 +422,7 @@ class QuantBnConv2d(Module):
         """
         self.fix_flag = True
         self.fix_BN = True
+        self.fold_BN = torch.tensor(1.)
 
     def unfix(self):
         """
@@ -429,6 +430,7 @@ class QuantBnConv2d(Module):
         """
         self.fix_flag = False
         self.fix_BN = self.training_BN_mode
+        self.fold_BN = torch.tensor(0.)
 
     def forward(self, x, pre_act_scaling_factor=None):
         """

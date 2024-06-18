@@ -81,7 +81,8 @@ class ConvFunc(autograd.Function):
     def forward(
         ctx, x, quant_input, bias, layer, dilations, group, kernel_shape, pads, strides
     ):
-        return layer.conv(x)
+        # return layer.conv(x)
+        return x
 
     @staticmethod
     def symbolic(

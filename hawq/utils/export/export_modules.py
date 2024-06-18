@@ -93,6 +93,9 @@ class ExportQonnxQuantLinear(nn.Module):
         super().__init__()
         self.hawq_layer = hawq_layer
         self.export_mode = False
+        self.weight_bit = self.hawq_layer.weight_bit
+        self.bias_bit = self.hawq_layer.bias_bit
+        self.quant_mode = self.hawq_layer.quant_mode
 
         self.has_bias = hasattr(self.hawq_layer, "bias")
         in_features, out_features = (
@@ -128,8 +131,8 @@ class ExportQonnxQuantLinear(nn.Module):
 
     def __repr__(self):
         repr = (
-            f"{self.__class__.__name__}(weight_bit={self.hawq_layer.weight_bit},"
-            + f" bias_bit={self.hawq_layer.bias_bit}, quantize={self.hawq_layer.quant_mode})"
+            f"{self.__class__.__name__}(weight_bit={self.weight_bit},"
+            + f" bias_bit={self.bias_bit}, quantize={self.quant_mode})"
         )
         return repr
 
@@ -290,19 +293,20 @@ class ExportQonnxQuantBnConv2d(nn.Module):
         return s
 
     def init_conv(self):
-        w_transform = self.hawq_layer.weight.data.contiguous().view(
-            self.hawq_layer.out_channels, -1
-        )
-        w_min = w_transform.min(dim=1).values
-        w_max = w_transform.max(dim=1).values
-        self.conv_scaling_factor = symmetric_linear_quantization_params(
-            self.hawq_layer.weight_bit, w_min, w_max, self.hawq_layer.per_channel
-        )
-        self.weight_integer = SymmetricQuantFunction.apply(
-            self.hawq_layer.weight,
-            self.hawq_layer.weight_bit,
-            self.conv_scaling_factor,
-        )
+        # w_transform = self.hawq_layer.conv.weight.data.contiguous().view(
+        #     self.hawq_layer.out_channels, -1
+        # )
+        # w_min = w_transform.min(dim=1).values
+        # w_max = w_transform.max(dim=1).values
+        # self.conv_scaling_factor = symmetric_linear_quantization_params(
+        #     self.hawq_layer.weight_bit, w_min, w_max, self.hawq_layer.per_channel
+        # )
+        # self.weight_integer = SymmetricQuantFunction.apply(
+        #     self.hawq_layer.conv.weight,
+        #     self.hawq_layer.weight_bit,
+        #     self.conv_scaling_factor,
+        # )
+        # self.weight_integer = self.hawq_layer.weight_integer
 
         quant_layer = QuantConv2d(
             in_channels=self.hawq_layer.in_channels,
@@ -314,9 +318,10 @@ class ExportQonnxQuantBnConv2d(nn.Module):
             bias_bit=self.hawq_layer.bias_bit
         )
         # quant_layer.set_param(self.hawq_layer.conv)
-        quant_layer.weight = self.hawq_layer.weight
+        quant_layer.weight = self.hawq_layer.conv.weight
         quant_layer.weight_integer = self.hawq_layer.weight_integer
-        quant_layer.conv_scaling_factor = self.hawq_layer.conv_scaling_factor
+        # need to conv_scaling_factor and convbn_scaling_factor for fix and merge bn
+        quant_layer.conv_scaling_factor = self.hawq_layer.convbn_scaling_factor   # Assume bn folded 
         self.export_quant_conv = ExportQonnxQuantConv2d(quant_layer)
 
     def forward(self, x, pre_act_scaling_factor=None):

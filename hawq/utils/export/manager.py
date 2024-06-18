@@ -59,7 +59,8 @@ class ExportManager(nn.Module):
 
     def copy_model(self, model):
         try:
-            self.export_model = copy.deepcopy(model)
+            self.export_model = model
+            # self.export_model = copy.deepcopy(model)
         except Exception as e:
             logging.error(e)
             raise Exception(e)
@@ -82,6 +83,8 @@ class ExportManager(nn.Module):
             elif isinstance(module, QuantAveragePool2d):
                 onnx_export_layer = ExportQonnxQuantAveragePool2d(module)
                 block[idx] = onnx_export_layer
+            elif isinstance(module, nn.Module):
+                self.replace_layers(module)
 
     def replace_layers(self, module):
         for param in module.parameters():
@@ -107,7 +110,7 @@ class ExportManager(nn.Module):
                 setattr(module, name, onnx_export_layer)
             elif isinstance(layer, nn.ModuleList):
                 self.replace_block(layer)
-            elif isinstance(layer, (nn.Sequential, nn.Module)):
+            elif isinstance(layer, nn.Sequential):
                 self.replace_layers(layer)
             # track changes
             if onnx_export_layer is not None:
@@ -139,7 +142,6 @@ class ExportManager(nn.Module):
             filename = gen_filename()
         if len(x) > 1:
             logging.info("Only [1, ?] dimensions are supported. Selecting first.")
-            x = x[0].view(1, -1)
         register_custom_ops()
 
         with torch.no_grad():
@@ -147,7 +149,7 @@ class ExportManager(nn.Module):
                 warnings.simplefilter("ignore")
                 # collect scaling factors for onnx nodes
                 self.set_export_mode("disable")
-                _ = self.export_model(x)
+                # _ = self.export_model(x)
                 # export with collected values
                 self.set_export_mode("enable")
                 if save:
@@ -156,7 +158,7 @@ class ExportManager(nn.Module):
                         model=self.export_model,
                         args=x,
                         f=filename,
-                        opset_version=11,
+                        opset_version=9,
                         operator_export_type=torch.onnx.OperatorExportTypes.ONNX,
                         custom_opsets={domain_info["name"]: 1},
                     )

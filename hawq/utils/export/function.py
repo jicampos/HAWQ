@@ -81,8 +81,15 @@ class ConvFunc(autograd.Function):
     def forward(
         ctx, x, quant_input, bias, layer, dilations, group, kernel_shape, pads, strides
     ):
-        # return layer.conv(x)
-        return x
+        return torch.nn.functional.conv2d(
+            x, 
+            weight=layer.weight, 
+            bias=layer.bias, 
+            stride=layer.stride, 
+            padding=layer.padding, 
+            dilation=layer.dilation, 
+            groups=layer.dilation
+        )
 
     @staticmethod
     def symbolic(

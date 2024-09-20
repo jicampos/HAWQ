@@ -1,6 +1,6 @@
 import torch
-import time
 import math
+import time
 import numpy as np
 import torch.nn as nn
 import torch.nn.functional as F
@@ -33,11 +33,11 @@ class QuantLinear(Module):
     """
 
     def __init__(self,
-                 in_features, 
+                 in_features,
                  out_features,
-                 bias = True,
-                 weight_bit=4,
-                 bias_bit=4,
+                 bias=True,
+                 weight_bit=16,
+                 bias_bit=16,
                  full_precision_flag=False,
                  quant_mode='symmetric',
                  per_channel=False,
@@ -45,19 +45,24 @@ class QuantLinear(Module):
                  weight_percentile=0,
                  ):
         super(QuantLinear, self).__init__()
+
+        ########### NEW EDITS ###########
         self.in_features = in_features
         self.out_features = out_features
         self.register_buffer('fc_scaling_factor', torch.zeros(1))
-        self.weight = Parameter(
-            torch.zeros((self.out_features, self.in_features))
-        ) 
+        self.weight = Parameter(torch.ones([out_features, in_features]))
         init.kaiming_uniform_(self.weight, nonlinearity='relu')
         self.register_buffer('weight_integer', torch.zeros_like(self.weight))
+        self.register_buffer('bias_integer', torch.zeros([out_features]))
+        self.register_buffer('prev_act_scaling_factor', torch.zeros([1]))
+        self.register_buffer('correct_output_scale', torch.zeros([1]))
         if bias == True:
             self.bias = Parameter(torch.zeros(self.out_features))
             self.register_buffer('bias_integer', torch.zeros_like(self.bias))
         else:
             self.bias = None
+        ########### END NEW EDITS ###########
+
 
         self.full_precision_flag = full_precision_flag
         self.weight_bit = weight_bit
@@ -72,8 +77,15 @@ class QuantLinear(Module):
 
     def __repr__(self):
         s = super(QuantLinear, self).__repr__()
-        s = "(" + s + " weight_bit={}, full_precision_flag={}, quantize_fn={})".format(
-            self.weight_bit, self.full_precision_flag, self.quant_mode)
+        # s = "{}(in_features={}, out_feature={} weight_bit={}, full_precision_flag={}, quantize_fn={})".format(
+        #     s, 
+        #     self.in_features, 
+        #     self.out_features
+        #     self.weight_bit, 
+        #     self.full_precision_flag, 
+        #     self.quant_mode
+        # )
+        s = f"QuantLinear(in_feautres={self.in_features}, out_features={self.out_features}, weight_bit={self.weight_bit}, bias_bit={self.bias_bit})"
         return s
 
     def set_param(self, linear):
@@ -83,6 +95,8 @@ class QuantLinear(Module):
         self.weight = Parameter(linear.weight.data.clone())
         self.register_buffer('weight_integer', torch.zeros_like(self.weight))
         self.register_buffer('bias_integer', torch.zeros_like(linear.bias))
+        self.register_buffer('prev_act_scaling_factor', torch.zeros([1, 1]))
+        self.register_buffer('correct_output_scale', torch.zeros([1, 1]))
         try:
             self.bias = Parameter(linear.bias.data.clone())
         except AttributeError:
@@ -141,8 +155,10 @@ class QuantLinear(Module):
             b = self.bias
 
         prev_act_scaling_factor = prev_act_scaling_factor.view(1, -1)
+        self.prev_act_scaling_factor = prev_act_scaling_factor
         x_int = x / prev_act_scaling_factor
         correct_output_scale = bias_scaling_factor[0].view(1, -1)
+        self.correct_output_scale = correct_output_scale
 
         return ste_round.apply(
             F.linear(x_int, weight=self.weight_integer, bias=self.bias_integer)) * correct_output_scale
@@ -173,7 +189,7 @@ class QuantAct(Module):
     """
 
     def __init__(self,
-                 activation_bit=4,
+                 activation_bit=16,
                  act_range_momentum=0.95,
                  full_precision_flag=False,
                  running_stat=True,
@@ -181,7 +197,7 @@ class QuantAct(Module):
                  fix_flag=False,
                  act_percentile=0,
                  fixed_point_quantization=False):
-        super(QuantAct, self).__init__()
+        super().__init__()
 
         self.activation_bit = activation_bit
         self.act_range_momentum = act_range_momentum
@@ -350,7 +366,7 @@ class QuantBnConv2d(Module):
     """
 
     def __init__(self,
-                 in_channels, 
+                in_channels, 
                  out_channels, 
                  kernel_size, 
                  stride, 
@@ -358,16 +374,17 @@ class QuantBnConv2d(Module):
                  dilation=1,
                  groups=1,
                  bias=True,
-                 weight_bit=4,
-                 bias_bit=4,
+                 weight_bit=16,
+                 bias_bit=16,
                  full_precision_flag=False,
                  quant_mode="symmetric",
                  per_channel=False,
                  fix_flag=False,
                  weight_percentile=0,
                  fix_BN=False,
-                 fix_BN_threshold=None):
+                 fix_BN_threshold=2048):
         super(QuantBnConv2d, self).__init__()
+        # ---------------------------------
         self.in_channels = in_channels
         self.out_channels = out_channels
         self.kernel_size = kernel_size
@@ -379,13 +396,9 @@ class QuantBnConv2d(Module):
         self.bn = nn.BatchNorm2d(self.out_channels)
         self.bn.momentum = 0.99
         self.register_buffer('convbn_scaling_factor', torch.tensor(0))
-        self.register_buffer('conv_scaling_factor', torch.tensor(0))
         self.register_buffer('weight_integer', torch.zeros_like(self.conv.weight.data))
         self.register_buffer('bias_integer', torch.zeros_like(self.bn.bias))
-        self.register_buffer('fold_BN', torch.tensor(0.))
-        self.convbn_scaling_factor = torch.tensor(0)
-        self.conv_scaling_factor = torch.tensor(0)
-        self.fold_BN = torch.tensor(1.) if fix_BN == True else torch.tensor(0.)
+        # ---------------------------------
         self.weight_bit = weight_bit
         self.full_precision_flag = full_precision_flag
         self.per_channel = per_channel
@@ -422,7 +435,6 @@ class QuantBnConv2d(Module):
         """
         self.fix_flag = True
         self.fix_BN = True
-        self.fold_BN = torch.tensor(1.)
 
     def unfix(self):
         """
@@ -430,7 +442,6 @@ class QuantBnConv2d(Module):
         """
         self.fix_flag = False
         self.fix_BN = self.training_BN_mode
-        self.fold_BN = torch.tensor(0.)
 
     def forward(self, x, pre_act_scaling_factor=None):
         """
@@ -449,8 +460,6 @@ class QuantBnConv2d(Module):
         else:
             raise ValueError("unknown quant mode: {}".format(self.quant_mode))
 
-        if self.fold_BN == 1:
-            self.fix_BN = True
         # determine whether to fold BN or not
         if self.fix_flag == False:
             self.counter += 1
@@ -460,7 +469,6 @@ class QuantBnConv2d(Module):
                 if self.counter == self.fix_BN_threshold:
                     print("Start Training with Folded BN")
                 self.fix_BN = True
-                self.fold_BN = torch.tensor(1.)
 
         # run the forward without folding BN
         if self.fix_BN == False:
@@ -491,10 +499,10 @@ class QuantBnConv2d(Module):
                         output_tensor=True
                     )
 
-            self.conv_scaling_factor = symmetric_linear_quantization_params(self.weight_bit, w_min, w_max, self.per_channel)
-            weight_integer = self.weight_function(self.conv.weight, self.weight_bit, self.conv_scaling_factor)
+            conv_scaling_factor = symmetric_linear_quantization_params(self.weight_bit, w_min, w_max, self.per_channel)
+            weight_integer = self.weight_function(self.conv.weight, self.weight_bit, conv_scaling_factor)
             conv_output = F.conv2d(x, weight_integer, self.conv.bias, self.conv.stride, self.conv.padding,
-                                   self.conv.dilation, self.conv.groups) * self.conv_scaling_factor.view(1, -1, 1, 1)
+                                   self.conv.dilation, self.conv.groups) * conv_scaling_factor.view(1, -1, 1, 1)
 
             batch_mean = torch.mean(conv_output, dim=(0, 2, 3))
             batch_var = torch.var(conv_output, dim=(0, 2, 3))
@@ -507,7 +515,7 @@ class QuantBnConv2d(Module):
             output_factor = self.bn.weight.view(1, -1, 1, 1) / torch.sqrt(batch_var + self.bn.eps).view(1, -1, 1, 1)
             output = output_factor * (conv_output - batch_mean.view(1, -1, 1, 1)) + self.bn.bias.view(1, -1, 1, 1)
 
-            return (output, self.conv_scaling_factor.view(-1) * output_factor.view(-1))
+            return (output, conv_scaling_factor.view(-1) * output_factor.view(-1))
         # fold BN and fix running statistics
         else:
             running_std = torch.sqrt(self.bn.running_var.detach() + self.bn.eps)
@@ -699,38 +707,42 @@ class QuantConv2d(Module):
     def __init__(self,
                  in_channels, 
                  out_channels, 
-                 kernel_size,
-                 stride,
-                 padding,
-                 dilation=1,
-                 groups=1,
+                 kernel_size, 
+                 stride, 
+                 padding, 
+                 dilation = 1, 
+                 groups = 1,
                  bias=True,
-                 weight_bit=4,
-                 bias_bit=None,
+                 weight_bit=16,
+                 bias_bit=16,
                  full_precision_flag=False,
                  quant_mode="symmetric",
                  per_channel=False,
                  fix_flag=False,
                  weight_percentile=0):
         super(QuantConv2d, self).__init__()
+
+        ####### NEW EDITS #######
         self.in_channels = in_channels
         self.out_channels = out_channels
-        self.kernel_size = kernel_size 
-        self.stride = stride
-        self.padding = padding
+        self.kernel_size = kernel_size
+        self.stride = stride 
+        self.padding = padding 
         self.dilation = dilation
-        self.groups = groups
-        self.register_buffer('conv_scaling_factor', torch.tensor(0))
-        self.conv_scaling_factor = torch.tensor(0.)
-        self.weight = Parameter(
-            torch.zeros((self.out_channels, self.in_channels, self.kernel_size, self.kernel_size))
-        )
+        self.groups = groups 
+        self.register_buffer('conv_scaling_factor', torch.tensor(0)) # torch.size = torch.size([])
+        self.weight = Parameter(torch.ones([out_channels, in_channels, kernel_size, kernel_size]))
         init.kaiming_uniform_(self.weight, nonlinearity='relu')
         self.register_buffer('weight_integer', torch.zeros_like(self.weight, dtype=torch.int8))
+        self.register_buffer('pre_act_scaling_factor', torch.zeros([1, 1, 1, 1]))
+        self.register_buffer('correct_output_scale', torch.zeros([1, 1, 1, 1]))
         if bias == True:
             self.bias = Parameter(torch.zeros((self.out_channels)))
+            self.register_buffer('bias_integer', torch.zeros([self.out_channels]))
         else:
             self.bias = None
+        ####### END NEW EDITS #######
+
 
         self.full_precision_flag = full_precision_flag
         self.weight_bit = weight_bit
@@ -746,6 +758,7 @@ class QuantConv2d(Module):
         s = "(" + s + " weight_bit={}, full_precision_flag={}, quant_mode={})".format(self.weight_bit,
                                                                                       self.full_precision_flag,
                                                                                       self.quant_mode)
+        s = f"QuantConv2d(in_channels={self.in_channels}, out_channels={self.out_channels}, weight_bit={self.weight_bit}, bias_bit={self.bias_bit})"
         return s
 
     def set_param(self, conv):
@@ -823,8 +836,10 @@ class QuantConv2d(Module):
             raise Exception('For weight, we only support symmetric quantization.')
 
         pre_act_scaling_factor = pre_act_scaling_factor.view(1, -1, 1, 1)
+        self.pre_act_scaling_factor = pre_act_scaling_factor
         x_int = x / pre_act_scaling_factor
         correct_output_scale = bias_scaling_factor.view(1, -1, 1, 1)
+        self.correct_output_scale = correct_output_scale
 
         if self.bias is None:
             return (F.conv2d(x_int, self.weight_integer, torch.zeros_like(bias_scaling_factor.view(-1)),

@@ -90,6 +90,7 @@ class ConvFunc(autograd.Function):
             dilation=layer.dilation, 
             groups=layer.dilation
         )
+        # return x
 
     @staticmethod
     def symbolic(
@@ -143,6 +144,7 @@ onnx_funcs = [BinaryQuantFunc, QuantFunc, TruncFunc, RoundFunc, ConvFunc]
 
 def register_custom_ops():
     for func in onnx_funcs:
+        print('Registering symbolic function:', func.name)
         register_custom_op_symbolic(
             f'{domain_info["name"]}::{func.name}', func.symbolic, domain_info["version"]
         )

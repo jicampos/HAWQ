@@ -17,7 +17,7 @@ from .export_modules import (
     ExportQonnxQuantAveragePool2d,
     ExportQonnxQuantBnConv2d,
 )
-from ..quantization_utils.quant_modules import (
+from hawq.utils.quantization_utils.quant_modules import (
     QuantAct,
     QuantLinear,
     QuantBnConv2d,
@@ -36,11 +36,13 @@ SET_EXPORT_MODE = (
 
 # ------------------------------------------------------------
 class ExportManager(nn.Module):
-    def __init__(self, model) -> None:
+    def __init__(self, model, linear_rounding=True, dynamic_scaling_factors=True) -> None:
         super().__init__()
         assert model is not None, "Model is not initialized"
 
         self.export_model = model
+        self.linear_rounding = linear_rounding
+        self.dynamic_scaling_factors = dynamic_scaling_factors
 
         self.copy_model(model)
         self.replace_layers(model)
@@ -72,10 +74,17 @@ class ExportManager(nn.Module):
                 onnx_export_layer = ExportQonnxQuantAct(module)
                 block[idx] = onnx_export_layer
             elif isinstance(module, QuantLinear):
-                onnx_export_layer = ExportQonnxQuantLinear(module)
+                onnx_export_layer = ExportQonnxQuantLinear(
+                    module, 
+                    linear_rounding=self.linear_rounding,
+                    dynamic_scaling_factors=self.dynamic_scaling_factors
+                )
                 block[idx] = onnx_export_layer
             elif isinstance(module, QuantConv2d):
-                onnx_export_layer = ExportQonnxQuantConv2d(module)
+                onnx_export_layer = ExportQonnxQuantConv2d(
+                    module,
+                    dynamic_scaling_factors=self.dynamic_scaling_factors
+                )
                 block[idx] = onnx_export_layer
             elif isinstance(module, QuantBnConv2d):
                 onnx_export_layer = ExportQonnxQuantBnConv2d(module)
@@ -97,10 +106,17 @@ class ExportManager(nn.Module):
                 onnx_export_layer = ExportQonnxQuantAct(layer)
                 setattr(module, name, onnx_export_layer)
             elif isinstance(layer, QuantLinear):
-                onnx_export_layer = ExportQonnxQuantLinear(layer)
+                onnx_export_layer = ExportQonnxQuantLinear(
+                    layer, 
+                    linear_rounding=self.linear_rounding,
+                    dynamic_scaling_factors=self.dynamic_scaling_factors
+                )
                 setattr(module, name, onnx_export_layer)
             elif isinstance(layer, QuantConv2d):
-                onnx_export_layer = ExportQonnxQuantConv2d(layer)
+                onnx_export_layer = ExportQonnxQuantConv2d(
+                    layer, 
+                    dynamic_scaling_factors=self.dynamic_scaling_factors
+                )
                 setattr(module, name, onnx_export_layer)
             elif isinstance(layer, QuantBnConv2d):
                 onnx_export_layer = ExportQonnxQuantBnConv2d(layer)
@@ -111,6 +127,8 @@ class ExportManager(nn.Module):
             elif isinstance(layer, nn.ModuleList):
                 self.replace_block(layer)
             elif isinstance(layer, nn.Sequential):
+                self.replace_layers(layer)
+            elif isinstance(layer, nn.Module):
                 self.replace_layers(layer)
             # track changes
             if onnx_export_layer is not None:
@@ -158,10 +176,12 @@ class ExportManager(nn.Module):
                         model=self.export_model,
                         args=x,
                         f=filename,
-                        opset_version=9,
+                        opset_version=11,
+                        # keep_initializers_as_inputs=True,
+                        do_constant_folding=True,  # whether to execute constant folding for optimization
                         operator_export_type=torch.onnx.OperatorExportTypes.ONNX,
                         custom_opsets={domain_info["name"]: 1},
                     )
-                    print("Optimizing...")
-                    optimize_onnx_model(filename)
+                    # print("Optimizing...")
+                    # optimize_onnx_model(filename)
                     print(f"Model saved to: {filename}")

@@ -1,21 +1,19 @@
 import torch
 import torch.nn as nn
 
-from ..quantization_utils.quant_utils import (
-    SymmetricQuantFunction,
-    symmetric_linear_quantization_params,
-)
+# from ..quant_utils import (
+#     SymmetricQuantFunction,
+#     symmetric_linear_quantization_params,
+# )
 
 from .function import get_quant_func
 from .function import TruncFunc, RoundFunc, ConvFunc
 
-from ..quantization_utils.quant_modules import (
+from hawq.utils.quantization_utils.quant_modules import (
     QuantAct,
     QuantDropout,
     QuantLinear,
     QuantBnConv2d,
-)
-from ..quantization_utils.quant_modules import (
     QuantMaxPool2d,
     QuantAveragePool2d,
     QuantConv2d,
@@ -50,11 +48,21 @@ class ExportQonnxQuantAct(nn.Module):
         self.scale = (
             self.hawq_layer.act_scaling_factor.clone().detach().requires_grad_(False)
         )
+        self.node_inputs = (
+            torch.tensor(self.scale, dtype=torch.float32),  # scale
+            torch.tensor(0, dtype=torch.float32),  # zero point
+            torch.tensor(self.bit_width, dtype=torch.float32),  # bit width
+        )
+        self.node_attributes = (
+            int(1 if self.hawq_layer.quant_mode == "symmetric" else 0),  # sign
+            int(0),  # narrow range
+            "ROUND",  # rounding mode
+        )
 
     def __repr__(self):
         repr = (
-            f"{self.__class__.__name__}(scale={self.scale.detach().item()}, bitwidth={self.hawq_layer.activation_bit},"
-            + f" full_precision_flag={self.hawq_layer.full_precision_flag}, quant_mode={self.hawq_layer.quant_mode})"
+            f"{self.__class__.__name__}(scale={self.scale.detach().item()}, bitwidth={self.bit_width})"
+            # + f" full_precision_flag={self.hawq_layer.full_precision_flag}, quant_mode={self.hawq_layer.quant_mode})"
         )
         return repr
 
@@ -74,6 +82,10 @@ class ExportQonnxQuantAct(nn.Module):
             pre_act_scaling_factor = torch.tensor([1.0], dtype=torch.float32)
 
         if self.export_mode:
+            quant_node = get_quant_func(self.node_inputs[2].item())
+            x = quant_node.apply(
+                x, *self.node_inputs, *self.node_attributes
+            )
             return (x, self.scale)
         else:
             x, act_scaling_factor = self.hawq_layer(
@@ -89,19 +101,27 @@ class ExportQonnxQuantAct(nn.Module):
 
 # ------------------------------------------------------------
 class ExportQonnxQuantLinear(nn.Module):
-    def __init__(self, hawq_layer) -> None:
+    def __init__(self, hawq_layer, linear_rounding, dynamic_scaling_factors) -> None:
         super().__init__()
         self.hawq_layer = hawq_layer
+        self.linear_rounding = linear_rounding
+        self.dynamic_scaling_factors = dynamic_scaling_factors
         self.export_mode = False
         self.weight_bit = self.hawq_layer.weight_bit
         self.bias_bit = self.hawq_layer.bias_bit
         self.quant_mode = self.hawq_layer.quant_mode
+
+        if self.dynamic_scaling_factors == False:
+            self.prev_act_scaling_factor = hawq_layer.prev_act_scaling_factor.item()
+            self.correct_output_scale = hawq_layer.correct_output_scale.item()
 
         self.has_bias = hasattr(self.hawq_layer, "bias")
         in_features, out_features = (
             self.hawq_layer.weight.shape[1],
             self.hawq_layer.weight.shape[0],
         )
+        self.in_f = in_features
+        self.out_f = out_features
         self.fc = torch.nn.Linear(in_features, out_features, self.has_bias)
         self.fc.weight.data = torch.transpose(self.hawq_layer.weight_integer, 0, 1)
         if self.has_bias:
@@ -131,8 +151,8 @@ class ExportQonnxQuantLinear(nn.Module):
 
     def __repr__(self):
         repr = (
-            f"{self.__class__.__name__}(weight_bit={self.weight_bit},"
-            + f" bias_bit={self.bias_bit}, quantize={self.quant_mode})"
+            f"{self.__class__.__name__}({self.in_f}, {self.out_f}, weight_bit={self.hawq_layer.weight_bit},"
+            + f" bias_bit={self.hawq_layer.bias_bit}, quantize={self.hawq_layer.quant_mode})"
         )
         return repr
 
@@ -142,7 +162,10 @@ class ExportQonnxQuantLinear(nn.Module):
             x = x[0]
 
         if self.export_mode:
-            x = x / prev_act_scaling_factor.view(-1)[0]
+            if self.dynamic_scaling_factors == False:
+                x = x / self.prev_act_scaling_factor
+            else:    
+                x = x / prev_act_scaling_factor.view(-1)[0]
 
             quant_node = get_quant_func(self.weight_node_inputs[2].item())
             weights = quant_node.apply(
@@ -157,12 +180,16 @@ class ExportQonnxQuantLinear(nn.Module):
                 )
                 x = torch.add(x, bias)
 
-            # x = torch.round(x)
-            bias_scaling_factor = self.scale * prev_act_scaling_factor.clone()
-            if len(bias_scaling_factor) == 1:
-                x = x * bias_scaling_factor.item()
+            if self.linear_rounding == True:
+                x = torch.round(x)  # needed in qonnx model 
+            if self.dynamic_scaling_factors == False:
+                x = x * self.correct_output_scale
             else:
-                x = x * bias_scaling_factor
+                bias_scaling_factor = self.scale * prev_act_scaling_factor.clone()
+                if len(bias_scaling_factor) == 1:
+                    x = x * bias_scaling_factor.item()
+                else:
+                    x = x * bias_scaling_factor
             model_info["dense_out"][self.hawq_layer] = x.clone()
             return x
         else:
@@ -172,10 +199,18 @@ class ExportQonnxQuantLinear(nn.Module):
 
 # ------------------------------------------------------------
 class ExportQonnxQuantConv2d(nn.Module):
-    def __init__(self, hawq_layer) -> None:
+    def __init__(self, hawq_layer, dynamic_scaling_factors) -> None:
         super().__init__()
         self.hawq_layer = hawq_layer
         self.export_mode = False
+        self.dynamic_scaling_factors = dynamic_scaling_factors
+
+        if dynamic_scaling_factors == False:
+            self.pre_act_scaling_factor = hawq_layer.pre_act_scaling_factor.item()
+            self.correct_output_scale = hawq_layer.correct_output_scale.item()
+
+        self.in_channels = self.hawq_layer.in_channels
+        self.out_channels = self.hawq_layer.out_channels
 
         self.conv_scaling_factor = self.hawq_layer.conv_scaling_factor.detach().clone()
         self.weight_node_inputs = (
@@ -227,7 +262,7 @@ class ExportQonnxQuantConv2d(nn.Module):
         )
 
     def __repr__(self):
-        repr = f"{self.__class__.__name__}()"
+        repr = f"{self.__class__.__name__}({self.in_channels}, {self.out_channels})"
         return repr
 
     def forward(self, x, prev_act_scaling_factor=None):
@@ -247,17 +282,27 @@ class ExportQonnxQuantConv2d(nn.Module):
         if self.export_mode:
             QuantFunc = get_quant_func(self.hawq_layer.weight_bit)
             weights = QuantFunc.apply(self.hawq_layer.weight_integer.type(torch.float32), *self.weight_node_inputs, *self.node_attributes)
-            x = x / prev_act_scaling_factor.item()
+            if self.dynamic_scaling_factors == False:
+                x = x / self.pre_act_scaling_factor
+            else:
+                x = x / prev_act_scaling_factor.item()
             if self.has_bias:
                 quant_node = get_quant_func(self.bias_node_inputs[2].item())
                 self.bias = quant_node.apply(
                     self.hawq_layer.bias_integer.data, *self.bias_node_inputs, *self.node_attributes
                 )
-            return (
-                ConvFunc.apply(x, weights, self.bias, self.hawq_layer, *self.conv_args)
-                * correct_output_scale.item(),
-                self.conv_scaling_factor,
-            )
+            if self.dynamic_scaling_factors == False:
+                return (
+                    ConvFunc.apply(x, weights, self.bias, self.hawq_layer, *self.conv_args)* self.correct_output_scale,
+                        self.conv_scaling_factor,
+                )
+            else:
+                return (
+                    ConvFunc.apply(x, weights, self.bias, self.hawq_layer, *self.conv_args)
+                        # torch.nn.functional.conv2d(x, weights, bias=self.bias, *self.conv_args) 
+                        * correct_output_scale.item(),
+                        self.conv_scaling_factor,
+                )
         else:
             x, conv_scaling_factor = self.hawq_layer(x, prev_act_scaling_factor)
             return (x, conv_scaling_factor)
@@ -271,8 +316,7 @@ class ExportQonnxQuantBnConv2d(nn.Module):
         self.export_mode = False
         self.init_conv()
 
-        # self.fix_BN = self.hawq_layer.fix_BN
-        self.fix_BN = bool(self.hawq_layer.fold_BN == 1)
+        self.fix_BN = self.hawq_layer.fix_BN
         self.bn = torch.nn.BatchNorm2d(
             self.hawq_layer.bn.num_features,
             self.hawq_layer.bn.eps,
@@ -307,7 +351,6 @@ class ExportQonnxQuantBnConv2d(nn.Module):
         #     self.hawq_layer.weight_bit,
         #     self.conv_scaling_factor,
         # )
-        # self.weight_integer = self.hawq_layer.weight_integer
 
         quant_layer = QuantConv2d(
             in_channels=self.hawq_layer.in_channels,
@@ -321,11 +364,7 @@ class ExportQonnxQuantBnConv2d(nn.Module):
         # quant_layer.set_param(self.hawq_layer.conv)
         quant_layer.weight = self.hawq_layer.conv.weight
         quant_layer.weight_integer = self.hawq_layer.weight_integer
-        # need to conv_scaling_factor and convbn_scaling_factor for fix and merge bn
-        if self.fix_BN == True: 
-            quant_layer.conv_scaling_factor = self.hawq_layer.convbn_scaling_factor
-        else:
-            quant_layer.conv_scaling_factor = self.hawq_layer.conv_scaling_factor
+        quant_layer.conv_scaling_factor = self.hawq_layer.convbn_scaling_factor
         self.export_quant_conv = ExportQonnxQuantConv2d(quant_layer)
 
     def forward(self, x, pre_act_scaling_factor=None):

@@ -7,8 +7,8 @@ import torch
 import torch.nn as nn
 import copy
 from ..quantization_utils.quant_modules import *
-from pytorchcv.models.common import ConvBlock
-from pytorchcv.models.shufflenetv2 import ShuffleUnit, ShuffleInitBlock
+# from pytorchcv.models.common import ConvBlock
+# from pytorchcv.models.shufflenetv2 import ShuffleUnit, ShuffleInitBlock
 import time
 import logging
 

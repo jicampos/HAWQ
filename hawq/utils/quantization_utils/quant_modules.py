@@ -54,8 +54,8 @@ class QuantLinear(Module):
         init.kaiming_uniform_(self.weight, nonlinearity='relu')
         self.register_buffer('weight_integer', torch.zeros_like(self.weight))
         self.register_buffer('bias_integer', torch.zeros([out_features]))
-        self.register_buffer('prev_act_scaling_factor', torch.zeros([1]))
-        self.register_buffer('correct_output_scale', torch.zeros([1]))
+        self.register_buffer('prev_act_scaling_factor', torch.zeros([1, 1]))
+        self.register_buffer('correct_output_scale', torch.zeros([1, 1]))
         if bias == True:
             self.bias = Parameter(torch.zeros(self.out_features))
             self.register_buffer('bias_integer', torch.zeros_like(self.bias))
